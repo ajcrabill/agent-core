@@ -15,10 +15,10 @@ Open-source platform for personal and team AI agents — `dcos-agent` (digital c
 
 1. **Goal-directed operation.** Every inbound (email, chat, peer message) spawns an obligation. Every obligation has testable completion criteria. Every autonomous action traces back to an obligation. Nothing is freelance.
 2. **Bias for action with a safety net.** Agents discover, plan, execute, and report after the fact. The quality auditor scores delivered work; bad outputs cause auto-undelegation.
-3. **State lives in code, not in instructions.** Learning rules, obligations, peer messages get *injected into the model's context by code*, not by "remember to read this" rules. This is the difference between an agent that works and one that drifts.
-4. **Bring your own inference.** Local Ollama, Anthropic, OpenAI, DeepSeek, or any OpenAI-compatible endpoint. No vendor lock.
+3. **Two reinforcing learning loops.** Supervised learning auto-captures your corrections from chat as rules that get code-loaded into every relevant decision (no "remember to check"). Agentic feedback learning closes the loop: a quality auditor scores delivered work, per-skill calibration earns the agent from review-required to autonomous as it proves itself, and a threshold-gated synthetic edge-case battery generates hard cases from your accumulated exemplars — collapsing weeks of "wait for the edge case to show up" into days. Together, a generic install becomes *your* agent — your voice, your judgment, your edge cases — much faster than either loop alone.
+4. **State lives in code, not in instructions.** Learning rules, obligations, peer messages get *injected into the model's context by code*, not by "remember to read this" rules. This is the difference between an agent that works and one that drifts.
 5. **Best-in-class tools at the edges.** Use OpenWebUI for chat, Obsidian / MkDocs for vault, ObligationBoard (built-in) for tasks. Don't reinvent UIs.
-6. **Two reinforcing learning loops.** Supervised learning auto-captures your corrections from chat as rules that get code-loaded into every relevant decision (no "remember to check"). Agentic feedback learning closes the loop: a quality auditor scores delivered work, per-skill calibration earns the agent from review-required to autonomous as it proves itself, and a threshold-gated synthetic edge-case battery generates hard cases from your accumulated exemplars — collapsing weeks of "wait for the edge case to show up" into days. Together, a generic install becomes *your* agent — your voice, your judgment, your edge cases — much faster than either loop alone.
+6. **Bring your own inference.** Local Ollama, Anthropic, OpenAI, DeepSeek, or any OpenAI-compatible endpoint. No vendor lock.
 
 ## Architecture (one-page)
 

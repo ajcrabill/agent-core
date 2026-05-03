@@ -18,6 +18,7 @@ Open-source platform for personal and team AI agents — `dcos-agent` (digital c
 3. **State lives in code, not in instructions.** Learning rules, obligations, peer messages get *injected into the model's context by code*, not by "remember to read this" rules. This is the difference between an agent that works and one that drifts.
 4. **Bring your own inference.** Local Ollama, Anthropic, OpenAI, DeepSeek, or any OpenAI-compatible endpoint. No vendor lock.
 5. **Best-in-class tools at the edges.** Use OpenWebUI for chat, Obsidian / MkDocs for vault, ObligationBoard (built-in) for tasks. Don't reinvent UIs.
+6. **Two reinforcing learning loops.** Supervised learning auto-captures your corrections from chat as rules that get code-loaded into every relevant decision (no "remember to check"). Agentic feedback learning closes the loop: a quality auditor scores delivered work, per-skill calibration earns the agent from review-required to autonomous as it proves itself, and a threshold-gated synthetic edge-case battery generates hard cases from your accumulated exemplars — collapsing weeks of "wait for the edge case to show up" into days. Together, a generic install becomes *your* agent — your voice, your judgment, your edge cases — much faster than either loop alone.
 
 ## Architecture (one-page)
 

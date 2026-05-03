@@ -25,10 +25,35 @@ from agent_core.agent.context import (
     ContextLoader,
     ContextScope,
 )
+from agent_core.agent.loop import AgentLoop, TickOutcome
+from agent_core.agent.protocols import (
+    PlanDeveloper,
+    PlanProposal,
+    StepExecutor,
+    StepResult,
+)
+from agent_core.agent.verify import (
+    CheckResult,
+    CompletionVerifier,
+    VerifyOutcome,
+)
 
 __all__ = [
+    # Context
     "ContextBlock",
     "ContextBundle",
     "ContextLoader",
     "ContextScope",
+    # Loop
+    "AgentLoop",
+    "TickOutcome",
+    # Protocols
+    "PlanDeveloper",
+    "PlanProposal",
+    "StepExecutor",
+    "StepResult",
+    # Verifiers
+    "CheckResult",
+    "CompletionVerifier",
+    "VerifyOutcome",
 ]

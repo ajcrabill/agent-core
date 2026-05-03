@@ -1,0 +1,25 @@
+[project]
+name = "agent-core-workspace"
+version = "0.0.1"
+description = "Workspace root for agent-core, dcos-agent, ikb-agent."
+requires-python = ">=3.11"
+
+[tool.uv.workspace]
+members = [
+    "packages/agent-core",
+    "packages/dcos-agent",
+    "packages/ikb-agent",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+extend-select = ["I", "B", "UP", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages/*/tests"]
+python_files = ["test_*.py", "*_test.py"]
+asyncio_mode = "auto"

@@ -1,0 +1,89 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+.tox/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+*.cover
+
+# --- uv ---
+.uv-cache/
+
+# --- Node (for OpenWebUI plugins, optional UI work) ---
+node_modules/
+npm-debug.log*
+.pnpm-store/
+*.tsbuildinfo
+
+# --- Editor / IDE ---
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# --- Secrets — NEVER commit these ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_secret*
+*_token*
+*credentials*
+oauth_*.json
+google_token*.json
+google_client_secret*.json
+api_keys.yaml
+secrets/
+
+# --- Local state, dbs, vaults — NEVER commit ---
+state/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+vault/
+vaults/
+.hermes/
+.dcos/
+.ikb/
+
+# --- Logs ---
+logs/
+*.log
+
+# --- Hermes runtime artifacts ---
+checkpoints/
+sessions/
+sandboxes/
+audio_cache/
+image_cache/
+pastes/
+
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# --- Misc ---
+*.bak
+*.tmp
+.cache/

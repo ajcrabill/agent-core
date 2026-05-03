@@ -1,0 +1,44 @@
+[project]
+name = "agent-core"
+version = "0.0.1"
+description = "Platform library for personal and team AI agents (dcos-agent, ikb-agent)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "AJ Crabill" }]
+keywords = ["ai-agent", "personal-assistant", "knowledge-base", "supervised-learning"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    # Locked when Sprint 1 lands
+    # "sqlmodel>=0.0.22",
+    # "alembic>=1.13",
+    # "psycopg2-binary>=2.9",
+    # "pgvector>=0.3",
+    # "sqlite-vec>=0.1",
+    # "keyring>=25",
+    # "watchdog>=4",
+    # "httpx>=0.27",
+    # "pynacl>=1.5",
+    # "pyyaml>=6",
+    # "click>=8.1",
+]
+
+[project.optional-dependencies]
+postgres = []  # placeholder; postgres deps moved here in Sprint 1
+sqlite = []    # placeholder; sqlite-specific deps moved here in Sprint 1
+
+[project.scripts]
+# Locked when Sprint 8 lands
+# "agent-core" = "agent_core.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent_core"]

@@ -9,15 +9,14 @@ generated projection.
 - `__init__.py` — public API
 - 20 schema-smoke tests in `tests/test_state_models.py`
 
-## What's coming in this sprint
+## What's here in this sprint (Sprint 1, complete)
 
-- `db.py` — dual-backend `Database` class (sqlite default for dcos-agent;
-  postgres default for ikb-agent), engine factory, session helper
-- `migrations/` — Alembic config + initial migration (auto-generated from the
-  models above)
-- `renderer.py` — db → markdown projection (vault is generated)
-- `watcher.py` — markdown → db (for the few human-edited surfaces: kanban
-  edits, conversation journal)
+- `models.py` — 26 SQLModel tables
+- `db.py` — dual-backend `Database` (SQLite default for dcos-agent; Postgres
+  default for ikb-agent); engine factory, sessions, health check, `upgrade()`
+- `migrations/` — Alembic config + initial migration; ships with the package
+- `renderer.py` — db → markdown projection (idempotent, stale-sweep)
+- `watcher.py` — markdown → db (debounced, fixed-point stable with renderer)
 
 ## Schema overview (current commit — 26 tables)
 

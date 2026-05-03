@@ -69,6 +69,16 @@ from agent_core.state.renderer import (
     render_obligation_md,
     slugify,
 )
+from agent_core.state.watcher import (
+    ApplyResult,
+    ParsedObligation,
+    VaultWatcher,
+    apply_modified,
+    apply_moved,
+    column_status,
+    is_rendered_obligation_path,
+    parse_obligation_md,
+)
 
 __all__ = [
     # Database
@@ -134,6 +144,15 @@ __all__ = [
     "render_obligation_md",
     "render_learning_rules_md",
     "slugify",
+    # Watcher
+    "ApplyResult",
+    "ParsedObligation",
+    "VaultWatcher",
+    "apply_modified",
+    "apply_moved",
+    "column_status",
+    "is_rendered_obligation_path",
+    "parse_obligation_md",
     # Helpers
     "new_id",
     "utcnow",

@@ -4,8 +4,6 @@ Open-source platform for personal and team AI agents — `dcos-agent` (digital c
 
 **Status**: pre-release. Active development. APIs and schema will change.
 
-> This repository replaces the [legacy v1 dCoS](https://github.com/ajcrabill/dCoS/tree/legacy-v1) implementation. The v1 code is preserved on the `legacy-v1` branch; the new architecture starts here on `main`.
-
 ## What you get
 
 - **`dcos-agent`** — single-user AI chief of staff. Email triage, calendar, obligations, content drafting, supervised learning of your preferences. Default backend: SQLite.

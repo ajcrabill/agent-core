@@ -211,15 +211,23 @@ class Database:
     # ── Session ─────────────────────────────────────────────────────────────
 
     @contextmanager
-    def session(self) -> Iterator[Session]:
+    def session(self, *, expire_on_commit: bool = False) -> Iterator[Session]:
         """Yield a SQLModel Session as a context manager.
 
         Rolls back on uncaught exception. Caller commits explicitly:
             with db.session() as s:
                 s.add(record)
                 s.commit()
+
+        ``expire_on_commit`` defaults to **False** (NOT SQLAlchemy's default
+        of True). The agent-core pattern frequently returns ORM objects from
+        functions that just committed — under expire-on-commit, attribute
+        access after the with-block raises DetachedInstanceError. Disabling
+        keeps loaded attributes valid after commit. Pass
+        ``expire_on_commit=True`` for the rare case where you want SQLAlchemy
+        to re-fetch on every post-commit attribute access.
         """
-        s = Session(self._engine)
+        s = Session(self._engine, expire_on_commit=expire_on_commit)
         try:
             yield s
         except Exception:

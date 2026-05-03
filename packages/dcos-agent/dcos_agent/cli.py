@@ -26,6 +26,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from agent_core.migrations.cli import migrate_group
 from agent_core.ops.cli import (
     backup_command,
     doctor_command,
@@ -67,6 +68,9 @@ def cli() -> None:
 
 # settings: full agent-core surface, mounted under `dcos settings`
 cli.add_command(settings_group, name="settings")
+
+# migrate: one-shot data conversions into backup-format JSON
+cli.add_command(migrate_group, name="migrate")
 
 # Each ops command needs --config defaulted to dcos's config path. Click
 # doesn't easily let us override defaults on borrowed commands, so we wrap

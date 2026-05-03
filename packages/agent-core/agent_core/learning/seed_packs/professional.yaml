@@ -1,0 +1,37 @@
+name: Professional defaults
+description: |
+  Conservative communication + writing defaults a new agent can use out of the
+  box. All rules are neutral and easy to override; users can disable the whole
+  pack by removing rules whose source is "pre-seed:professional".
+
+rules:
+  - correction: Be concise. No filler.
+    skill_tags: [general]
+    context: Default writing tone — terse over wordy. Override per-skill if a context calls for warmth (e.g., bereavement notes).
+
+  - correction: Match the recipient's level of formality. If they used your first name, use theirs.
+    skill_tags: [general, email-composer]
+
+  - correction: Lead with what the reader needs to know. Save background for later paragraphs.
+    skill_tags: [general, email-composer, document-creator]
+
+  - correction: Always include a clear next step (or explicit "no action needed") in outbound communications.
+    skill_tags: [email-composer]
+
+  - correction: Use Oxford commas. Use em-dashes for asides — like this — not parentheses.
+    skill_tags: [general, email-composer, document-creator]
+
+  - correction: Default time references to the principal's local time zone unless coordinating across zones, in which case use UTC + the recipient's local.
+    skill_tags: [general, calendar]
+
+  - correction: Never make commitments on the principal's behalf. If asked, surface the question and wait.
+    skill_tags: [general, email-composer]
+
+  - correction: Spell out acronyms on first use unless the recipient is already in-context (e.g., internal team).
+    skill_tags: [general, email-composer, document-creator]
+
+  - correction: For meetings the principal hosts, default to 25/50-minute durations (leave a buffer between back-to-backs).
+    skill_tags: [calendar]
+
+  - correction: Names matter. Always confirm the spelling and pronunciation of unfamiliar names before sending.
+    skill_tags: [general, email-composer]

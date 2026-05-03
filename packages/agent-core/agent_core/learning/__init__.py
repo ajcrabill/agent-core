@@ -13,11 +13,41 @@ agent_core.state.models. This package wraps it with the operational APIs.
 """
 
 from agent_core.learning.candidates import CorrectionCandidates
+from agent_core.learning.detector import (
+    CorrectionDetector,
+    DetectedCorrection,
+    HeuristicDetector,
+)
 from agent_core.learning.firings import RuleFirings
+from agent_core.learning.maintenance import (
+    CompactableCluster,
+    ConflictFinding,
+    DuplicateFinding,
+    MaintenanceReport,
+    MaintenanceScan,
+)
+from agent_core.learning.review import (
+    WeeklyLearningReview,
+    WeeklyLearningReviewBuilder,
+)
+from agent_core.learning.seed_packs import list_packs, load_pack, pack_metadata
 from agent_core.learning.store import LearningStore
 
 __all__ = [
+    "CompactableCluster",
+    "ConflictFinding",
     "CorrectionCandidates",
+    "CorrectionDetector",
+    "DetectedCorrection",
+    "DuplicateFinding",
+    "HeuristicDetector",
     "LearningStore",
+    "MaintenanceReport",
+    "MaintenanceScan",
     "RuleFirings",
+    "WeeklyLearningReview",
+    "WeeklyLearningReviewBuilder",
+    "list_packs",
+    "load_pack",
+    "pack_metadata",
 ]

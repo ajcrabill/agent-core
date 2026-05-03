@@ -750,8 +750,13 @@ class Calibration(SQLModel, table=True):
 
 
 class Thought(SQLModel, table=True):
-    """A unit of semantic memory. Sprint 7 adds the `embedding` column
-    (pgvector on Postgres, sqlite-vec on SQLite) for similarity retrieval."""
+    """A unit of semantic memory.
+
+    Embeddings stored as JSON list of floats — portable across SQLite + Postgres
+    without conditional logic, and fast enough for ~tens of thousands of thoughts
+    with Python-side cosine similarity. Native vector backends (pgvector /
+    sqlite-vec) come in a future sprint when scale demands.
+    """
 
     id: str = Field(primary_key=True, default_factory=new_id)
     content: str
@@ -761,9 +766,18 @@ class Thought(SQLModel, table=True):
         description="Content hash for dedup",
     )
     metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    embedding: list[float] | None = Field(
+        default=None,
+        sa_column=Column(JSON),
+        description="Vector embedding (JSON list of floats); None until indexed",
+    )
+    embedding_model: str | None = Field(
+        default=None,
+        index=True,
+        description="Identifier for the embedding model used (e.g., 'ollama:nomic-embed-text')",
+    )
     created_at: datetime = Field(default_factory=utcnow, nullable=False, index=True)
     updated_at: datetime = Field(default_factory=utcnow, nullable=False)
-    # `embedding` column added by Sprint 7 backend-conditionally.
 
 
 class ThoughtSource(SQLModel, table=True):

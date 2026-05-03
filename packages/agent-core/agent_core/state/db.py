@@ -240,6 +240,66 @@ class Database:
             logger.warning("db health check failed: %s", e)
             return False
 
+    # ── Migrations (Alembic) ────────────────────────────────────────────────
+
+    def upgrade(self, revision: str = "head") -> None:
+        """Apply Alembic migrations up to ``revision`` (default: 'head').
+
+        Idempotent: running twice on an up-to-date DB is a no-op.
+
+        For sqlite file URLs, ensures the parent dir exists first so a fresh
+        install Just Works without any pre-step.
+        """
+        from alembic import command
+        from alembic.config import Config
+
+        if self.backend == Backend.sqlite:
+            db_path = self.sqlite_path()
+            if db_path is not None:
+                db_path.parent.mkdir(parents=True, exist_ok=True)
+
+        cfg = Config()
+        # script_location is the migrations/ dir bundled with this package.
+        migrations_dir = Path(__file__).parent / "migrations"
+        cfg.set_main_option("script_location", str(migrations_dir))
+
+        # Inject our live engine's connection so env.py uses it (instead of
+        # building a new engine from .ini-driven URL).
+        with self._engine.connect() as connection:
+            cfg.attributes["connection"] = connection
+            command.upgrade(cfg, revision)
+        logger.info("db upgraded to %s on %s", revision, self.backend.value)
+
+    def current_revision(self) -> str | None:
+        """Return the Alembic revision currently applied to this DB.
+
+        ``None`` if the DB has no alembic_version table yet (i.e., never
+        upgraded).
+        """
+        from alembic.runtime.migration import MigrationContext
+
+        try:
+            with self._engine.connect() as connection:
+                ctx = MigrationContext.configure(connection)
+                return ctx.get_current_revision()
+        except Exception:
+            return None
+
+    def heads(self) -> list[str]:
+        """Return the list of head revisions defined in the bundled migrations.
+
+        For a healthy single-line history this is exactly one revision; multiple
+        heads indicate a branched migration tree (which we shouldn't have).
+        """
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        cfg = Config()
+        migrations_dir = Path(__file__).parent / "migrations"
+        cfg.set_main_option("script_location", str(migrations_dir))
+        script = ScriptDirectory.from_config(cfg)
+        return list(script.get_heads())
+
 
 __all__ = [
     "Backend",

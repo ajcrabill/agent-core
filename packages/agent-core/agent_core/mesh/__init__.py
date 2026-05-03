@@ -19,6 +19,7 @@ deployments (the actual dCoS-on-laptop ↔ iKB-on-server use case).
 """
 
 from agent_core.mesh.client import MeshClient
+from agent_core.mesh.http import HttpMeshServer, HttpTransport
 from agent_core.mesh.mcp_tools import (
     team_get_daily_digest,
     team_get_messages,
@@ -48,6 +49,8 @@ __all__ = [
     # Peers
     "PeerRegistry",
     # Transport
+    "HttpMeshServer",
+    "HttpTransport",
     "InProcessTransport",
     "Transport",
     # Client

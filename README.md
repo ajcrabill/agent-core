@@ -75,7 +75,7 @@ agent-core/
 
 - [Hermes](https://github.com/NousResearch/hermes-agent) — agent runtime (forked here as `packages/hermes/`)
 - [OpenWebUI](https://github.com/open-webui/open-webui) — chat surface (skinned + branded; ObligationBoard plugin)
-- **OpenBrain** — semantic memory + multi-source ingest (PostgreSQL + pgvector + Ollama embeddings). The iKB spine, also available to dCoS skills that want semantic recall.
+- [OpenBrain (OB1)](https://github.com/NateBJones-Projects/OB1) — semantic memory + multi-source ingest (PostgreSQL + pgvector + Ollama embeddings). The iKB spine, also available to dCoS skills that want semantic recall.
 - [Obsidian](https://obsidian.md) — vault editing (dCoS, single-user)
 - [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) — vault publishing (iKB, team-read-only)
 - PostgreSQL + [pgvector](https://github.com/pgvector/pgvector), SQLite + [sqlite-vec](https://github.com/asg017/sqlite-vec)

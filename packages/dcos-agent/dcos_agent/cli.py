@@ -13,7 +13,9 @@ Top-level commands:
     dcos doctor
     dcos backup / restore
     dcos setup --tier 1|2|3
-    dcos info     (dcos-specific: print resolved paths + versions)
+    dcos info               — print resolved paths + versions
+    dcos skills list        — list registered skills + tags
+    dcos skills describe X  — schema + seed rules for skill X
 """
 
 from __future__ import annotations
@@ -194,6 +196,67 @@ def info() -> None:
         "yes" if default_db_path().exists() else "no (will be created on first run)",
     )
     console.print(table)
+
+
+# ── Skills subgroup ───────────────────────────────────────────────────────
+
+# Side-effecting import: registers the three default skills (email-triage,
+# document-creator, email-composer) into agent_core.skills.default_registry.
+import dcos_agent.skills  # noqa: F401, E402
+
+
+@cli.group(name="skills")
+def skills_group() -> None:
+    """Discover + describe registered skills."""
+
+
+@skills_group.command(name="list")
+def skills_list() -> None:
+    """Show every registered skill with its tags."""
+    from agent_core.skills import default_registry
+
+    skills = default_registry.list()
+    if not skills:
+        console.print("[dim]no skills registered[/dim]")
+        return
+    table = Table(title=f"{len(skills)} registered skill(s)")
+    table.add_column("name", style="cyan", no_wrap=True)
+    table.add_column("tags", style="dim")
+    table.add_column("description")
+    for skill in skills:
+        table.add_row(skill.name, ", ".join(skill.tags), skill.description)
+    console.print(table)
+
+
+@skills_group.command(name="describe")
+@click.argument("name")
+def skills_describe(name: str) -> None:
+    """Print the input/output schemas + seed rules for skill NAME."""
+    import json
+
+    from agent_core.skills import default_registry
+
+    skill = default_registry.get(name)
+    if skill is None:
+        console.print(f"[red]no skill named[/red] {name}")
+        console.print(f"[dim]registered: {', '.join(default_registry.names())}[/dim]")
+        raise click.exceptions.Exit(1)
+
+    console.print(f"[bold cyan]{skill.name}[/bold cyan] — {skill.description}")
+    console.print(f"[dim]tags:[/dim] {', '.join(skill.tags)}\n")
+
+    console.print("[bold]Input schema:[/bold]")
+    console.print(json.dumps(skill.input_schema.model_json_schema(), indent=2))
+    console.print()
+
+    console.print("[bold]Output schema:[/bold]")
+    console.print(json.dumps(skill.output_schema.model_json_schema(), indent=2))
+    console.print()
+
+    if skill.seed_rules:
+        console.print(f"[bold]Seed rules ({len(skill.seed_rules)}):[/bold]")
+        for r in skill.seed_rules:
+            console.print(f"  • {r.correction}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────

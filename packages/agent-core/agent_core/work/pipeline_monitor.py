@@ -92,6 +92,23 @@ class PipelineMonitor:
         self.waiting_threshold_hours = waiting_threshold_hours
         self.check_due_dates = check_due_dates
 
+    @classmethod
+    def from_settings(
+        cls,
+        settings: object,
+        db: "Database",
+        *,
+        check_due_dates: bool = True,
+    ) -> "PipelineMonitor":
+        """Build from ``AgentSettings``: reads ``settings.work.pipeline_*``."""
+        w = settings.work  # type: ignore[attr-defined]
+        return cls(
+            db,
+            in_progress_threshold_hours=w.pipeline_in_progress_threshold_hours,
+            waiting_threshold_hours=w.pipeline_waiting_threshold_hours,
+            check_due_dates=check_due_dates,
+        )
+
     # ── Public API ──────────────────────────────────────────────────────────
 
     def find_stalled(self) -> list[StalledObligation]:

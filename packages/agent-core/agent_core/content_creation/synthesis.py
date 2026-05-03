@@ -121,6 +121,26 @@ class SyntheticBattery:
         self.min_days_of_data = min_days_of_data
         self.min_correction_themes = min_correction_themes
 
+    @classmethod
+    def from_settings(
+        cls,
+        settings: object,
+        db: "Database",
+        *,
+        exemplar_store: "ExemplarStore | None" = None,
+        iterations: "Iterations | None" = None,
+    ) -> "SyntheticBattery":
+        """Build from ``AgentSettings``: reads ``settings.learning.synthetic_min_*``."""
+        lc = settings.learning  # type: ignore[attr-defined]
+        return cls(
+            db,
+            exemplar_store=exemplar_store,
+            iterations=iterations,
+            min_natural_exemplars=lc.synthetic_min_natural_exemplars,
+            min_days_of_data=lc.synthetic_min_days_of_data,
+            min_correction_themes=lc.synthetic_min_correction_themes,
+        )
+
     # ── Eligibility ────────────────────────────────────────────────────────
 
     def check_eligibility(self, skill: str) -> BatteryEligibility:

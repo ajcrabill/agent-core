@@ -46,6 +46,26 @@ class SamplingPolicy:
         self.bootstrap_count = bootstrap_count
         self._rng = rng or random.random
 
+    @classmethod
+    def from_settings(
+        cls,
+        settings: object,
+        db: "Database",
+        *,
+        bootstrap_count: int = 5,
+        rng: "Callable[[], float] | None" = None,
+    ) -> "SamplingPolicy":
+        """Build from ``AgentSettings``: reads ``settings.quality.audit_sample_rate``
+        and ``settings.quality.low_confidence_audit_threshold``."""
+        q = settings.quality  # type: ignore[attr-defined]
+        return cls(
+            db,
+            base_rate=q.audit_sample_rate,
+            low_confidence_threshold=q.low_confidence_audit_threshold,
+            bootstrap_count=bootstrap_count,
+            rng=rng,
+        )
+
     def should_audit(
         self,
         *,

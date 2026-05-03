@@ -115,6 +115,31 @@ class AgentLoop:
         self.completion_verifier = completion_verifier
         self.max_obligations_per_tick = max_obligations_per_tick
 
+    @classmethod
+    def from_settings(
+        cls,
+        settings: object,
+        db: "Database",
+        context_loader: "ContextLoader",
+        plan_developer: "PlanDeveloper",
+        step_executor: "StepExecutor",
+        completion_verifier: "CompletionVerifier",
+    ) -> "AgentLoop":
+        """Build from ``AgentSettings``: reads ``settings.runtime.max_obligations_per_tick``.
+
+        Note: ``max_ticks_safety_cap`` from settings is not stored on the
+        instance — it's passed at ``run()`` time. Callers using this factory
+        should also pass ``settings.runtime.max_ticks_safety_cap`` to ``run()``.
+        """
+        return cls(
+            db,
+            context_loader,
+            plan_developer,
+            step_executor,
+            completion_verifier,
+            max_obligations_per_tick=settings.runtime.max_obligations_per_tick,  # type: ignore[attr-defined]
+        )
+
     # ── Public API ──────────────────────────────────────────────────────────
 
     def tick(self, scope: ContextScope | None = None) -> TickOutcome:

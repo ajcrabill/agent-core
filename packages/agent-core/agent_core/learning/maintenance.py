@@ -154,6 +154,26 @@ class MaintenanceScan:
         self.stale_days = stale_days
         self.compactable_min_cluster = compactable_min_cluster
 
+    @classmethod
+    def from_settings(
+        cls,
+        settings: object,
+        db: "Database",
+        *,
+        store: "LearningStore | None" = None,
+        firings: "RuleFirings | None" = None,
+    ) -> "MaintenanceScan":
+        """Build from ``AgentSettings``: reads ``settings.learning.maintenance_*``."""
+        lc = settings.learning  # type: ignore[attr-defined]
+        return cls(
+            db,
+            store,
+            firings,
+            duplicate_threshold=lc.maintenance_duplicate_threshold,
+            stale_days=lc.maintenance_stale_days,
+            compactable_min_cluster=lc.maintenance_compactable_min_cluster,
+        )
+
     def run(self) -> MaintenanceReport:
         """Run all four scans, return a single report."""
         rules = self.store.list_active()

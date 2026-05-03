@@ -82,6 +82,11 @@ class DailyDigestBuilder:
         self.db = db
         self.period_hours = period_hours
 
+    @classmethod
+    def from_settings(cls, settings: object, db: Database) -> "DailyDigestBuilder":
+        """Build from ``AgentSettings``: reads ``settings.notifications.digest_period_hours``."""
+        return cls(db, period_hours=settings.notifications.digest_period_hours)  # type: ignore[attr-defined]
+
     def build(self, *, ending_at: datetime | None = None) -> DailyDigest:
         end = ending_at or utcnow()
         start = end - timedelta(hours=self.period_hours)

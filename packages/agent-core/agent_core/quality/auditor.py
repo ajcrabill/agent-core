@@ -68,6 +68,34 @@ class QualityAuditor:
         self.primary_auditor_model_name = primary_auditor_model_name
         self.meta_auditor_model_name = meta_auditor_model_name
 
+    @classmethod
+    def from_settings(
+        cls,
+        settings: object,
+        db: "Database",
+        primary_auditor: "AuditorModel",
+        *,
+        meta_auditor: "AuditorModel | None" = None,
+        meta_audit_every_n: int = 10,
+        primary_auditor_model_name: str = "primary-auditor",
+        meta_auditor_model_name: str = "meta-auditor",
+    ) -> "QualityAuditor":
+        """Build from ``AgentSettings``: reads ``settings.quality.*`` and
+        ``settings.autonomy.auto_undelegate_after_n_failures``."""
+        q = settings.quality  # type: ignore[attr-defined]
+        a = settings.autonomy  # type: ignore[attr-defined]
+        return cls(
+            db,
+            primary_auditor,
+            meta_auditor=meta_auditor,
+            meta_audit_every_n=meta_audit_every_n,
+            pass_threshold=q.pass_threshold,
+            undelegation_strikes=a.auto_undelegate_after_n_failures,
+            last_n_window=q.last_n_window,
+            primary_auditor_model_name=primary_auditor_model_name,
+            meta_auditor_model_name=meta_auditor_model_name,
+        )
+
     # ── Run audits ──────────────────────────────────────────────────────────
 
     def audit(

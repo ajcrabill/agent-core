@@ -43,6 +43,21 @@ class CalibrationManager:
         self.default_threshold = default_threshold
         self.ratifications_required = ratifications_required
 
+    @classmethod
+    def from_settings(
+        cls,
+        settings: object,
+        db: "Database",
+        *,
+        ratifications_required: int = 5,
+    ) -> "CalibrationManager":
+        """Build from ``AgentSettings``: reads ``settings.learning.auto_promote_confidence``."""
+        return cls(
+            db,
+            default_threshold=settings.learning.auto_promote_confidence,  # type: ignore[attr-defined]
+            ratifications_required=ratifications_required,
+        )
+
     # ── Read API ────────────────────────────────────────────────────────────
 
     def get(self, skill: str) -> Calibration:

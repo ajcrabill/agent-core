@@ -36,7 +36,6 @@ import threading
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -49,7 +48,7 @@ from watchdog.events import (
 from watchdog.observers import Observer
 
 from agent_core.state.db import Database
-from agent_core.state.models import Obligation, ObligationStatus
+from agent_core.state.models import Obligation, ObligationStatus, utcnow
 from agent_core.state.renderer import _STATUS_TO_DIR  # type: ignore[attr-defined]
 
 if TYPE_CHECKING:
@@ -210,7 +209,7 @@ def apply_modified(db: Database, path: Path, board_root: Path) -> ApplyResult:
         if not changed:
             return ApplyResult(action="noop", obligation_id=ob.id)
 
-        ob.updated_at = datetime.utcnow()
+        ob.updated_at = utcnow()
         s.add(ob)
         s.commit()
         return ApplyResult(action="updated", obligation_id=ob.id)
@@ -248,7 +247,7 @@ def apply_moved(
         if ob is None:
             return ApplyResult(action="not_found", obligation_id=parsed.id)
         ob.status = dest_status
-        ob.updated_at = datetime.utcnow()
+        ob.updated_at = utcnow()
         s.add(ob)
         s.commit()
         return ApplyResult(action="moved", obligation_id=ob.id)

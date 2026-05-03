@@ -75,13 +75,18 @@ agent-core/
 
 ## Built on
 
-- [Hermes](https://github.com/NousResearch/hermes-agent) — agent runtime (forked here)
-- [OpenWebUI](https://github.com/open-webui/open-webui) — chat surface
-- [Obsidian](https://obsidian.md) — vault editing (dCoS)
-- [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) — vault publishing (iKB)
+- [Hermes](https://github.com/NousResearch/hermes-agent) — agent runtime (forked here as `packages/hermes/`)
+- [OpenWebUI](https://github.com/open-webui/open-webui) — chat surface (skinned + branded; ObligationBoard plugin)
+- **OpenBrain** — semantic memory + multi-source ingest (PostgreSQL + pgvector + Ollama embeddings). The iKB spine, also available to dCoS skills that want semantic recall.
+- [Obsidian](https://obsidian.md) — vault editing (dCoS, single-user)
+- [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) — vault publishing (iKB, team-read-only)
 - PostgreSQL + [pgvector](https://github.com/pgvector/pgvector), SQLite + [sqlite-vec](https://github.com/asg017/sqlite-vec)
 - [Ollama](https://ollama.ai) for local inference, embeddings via `nomic-embed-text`
 - [Litestream](https://litestream.io) for SQLite continuous backup
+
+## Predecessor
+
+This project descends from [ajcrabill/dCoS](https://github.com/ajcrabill/dCoS) (now archived as the `legacy-v1` branch on that repo). The architecture, scope, and skill model are all rebuilt — no code carries over — but the design is informed by lessons from running the v1 in production.
 
 ## License
 

@@ -823,3 +823,100 @@ class IngestionRun(SQLModel, table=True):
     errors: int = Field(default=0)
     error_summary: str | None = None
     metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+
+# ── People (relationship CRM with autonomy implications) ─────────────────────
+
+
+class AutonomyOverride(StrEnum):
+    """Per-person override on the install's default autonomy posture.
+
+    inherit            — use settings.autonomy.default_policy as-is
+    more_cautious      — pull this person's actions one notch toward gated
+    more_aggressive    — pull one notch toward autonomous (rare; trusted
+                          collaborators only)
+    never_autonomous   — every action involving this person requires explicit
+                          principal confirmation, regardless of preset
+    """
+
+    inherit = "inherit"
+    more_cautious = "more_cautious"
+    more_aggressive = "more_aggressive"
+    never_autonomous = "never_autonomous"
+
+
+class Person(SQLModel, table=True):
+    """A human the agent has a relationship with.
+
+    Lifted from Esby's ``people`` schema during the Sprint 13 migration. Both
+    products use it: dcos-agent's "Track Charlotte in People notes" obligation
+    becomes a real Person row; ikb-agent's stakeholder management is built
+    around this table.
+
+    Identity matters. Several fields encode autonomy / privacy semantics that
+    skills + the action-policy enforcer respect:
+      - ``autonomy_override``      raises or lowers the install's default for
+                                    actions involving this person.
+      - ``never_autonomous_send``  hard block on outbound autonomous messages
+                                    to this person regardless of preset.
+      - ``sensitive_memory_flag``  flag for the openbrain ingest layer to
+                                    apply tighter visibility rules to thoughts
+                                    that mention this person.
+
+    Contact methods live in ``contact_methods`` (JSON dict, e.g.,
+    ``{"email": "x@y.com", "sms": "+1...", "slack": "@handle"}``). A
+    dedicated ContactMethod table can come later if the access patterns
+    warrant it; today JSON is enough.
+    """
+
+    __tablename__ = "person"
+
+    id: str = Field(primary_key=True, default_factory=new_id)
+    name: str = Field(index=True, description="Display name, e.g. 'Charlotte Grinberg'")
+    organization: str | None = Field(default=None, index=True)
+    role: str | None = None
+    stakeholder_class: str = Field(
+        default="unknown_external",
+        index=True,
+        description=(
+            "Free-form stakeholder taxonomy — product packages define the "
+            "valid values (e.g., key_internal | principal_client | family_member)"
+        ),
+    )
+    autonomy_override: AutonomyOverride = Field(
+        default=AutonomyOverride.inherit,
+        sa_column=_enum_col(AutonomyOverride, index=True),
+    )
+    relationship_intensity: int | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+        description="1=acquaintance, 5=closest. Drives prioritization heuristics.",
+    )
+    response_sla: str | None = Field(
+        default=None,
+        description="Free-form SLA like '24h', '1h', 'next-business-day'",
+    )
+    never_autonomous_send: bool = Field(
+        default=False,
+        description="If True, outbound autonomous messages to this person are blocked.",
+    )
+    sensitive_memory_flag: bool = Field(
+        default=False,
+        description="If True, thoughts referencing this person get tighter visibility.",
+    )
+    contact_methods: dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description=(
+            "Map of method -> identifier. e.g., "
+            "{'email': 'a@b.c', 'sms': '+1555...', 'slack': '@handle'}"
+        ),
+    )
+    notes_path: str | None = Field(
+        default=None,
+        description="Optional pointer to a vault People note (relative path)",
+    )
+    metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=utcnow, nullable=False, index=True)
+    updated_at: datetime = Field(default_factory=utcnow, nullable=False)

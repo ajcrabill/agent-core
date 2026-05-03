@@ -17,6 +17,7 @@ from agent_core.state.models import (
     ActionClass,
     ActionLog,
     ActionOutcome,
+    AutonomyOverride,
     Calibration,
     CompletionCheck,
     CorrectionCandidate,
@@ -47,6 +48,7 @@ from agent_core.state.models import (
     ObligationStatus,
     Peer,
     PeerRole,
+    Person,
     Plan,
     PlanStatus,
     QualityAudit,
@@ -91,6 +93,9 @@ __all__ = [
     "Identity",
     "Peer",
     "PeerRole",
+    # People
+    "Person",
+    "AutonomyOverride",
     # Work
     "Obligation",
     "ObligationStatus",

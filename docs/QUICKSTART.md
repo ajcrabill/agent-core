@@ -7,6 +7,7 @@ Five commands to a working agent install. Tested on macOS 14+ with Python 3.11.
 ```bash
 # Prereqs (one-time)
 brew install uv git
+# Optional: brew install node                                     # for OpenWebUI ObligationBoard plugin
 # Optional: brew install ollama && ollama pull nomic-embed-text   # for OpenBrain semantic search
 # Optional (ikb-agent only): brew install postgresql@16 && brew services start postgresql@16
 
@@ -100,6 +101,7 @@ Each check is skippable — Ollama only checked when `embedding_provider=ollama`
 - **Python 3.11+** (3.12 also works)
 - **uv** (`brew install uv` or https://docs.astral.sh/uv/)
 - **git** (any recent version)
+- **Optional — Node.js + npm** for the OpenWebUI ObligationBoard plugin. Skip entirely if you only need the CLI + the auto-generated Swagger UI at `http://127.0.0.1:8765/docs`.
 - **Optional — Ollama** for OpenBrain semantic search. Without it, OpenBrain falls back to deterministic stub embeddings (works but no real similarity).
 - **Optional — PostgreSQL 16+** for ikb-agent. SQLite works for dcos-agent out of the box.
 - **Optional — Tailscale** for cross-machine mesh between dcos and ikb instances.

@@ -383,4 +383,5 @@ def test_cli_no_seed_obligations(tmp_path: Path) -> None:
     import json as _json
 
     payload = _json.loads(output.read_text())
-    assert payload["tables"]["obligation"] == []
+    # Empty tables omitted from payload — cleaner JSON; restore handles either way.
+    assert payload["tables"].get("obligation", []) == []

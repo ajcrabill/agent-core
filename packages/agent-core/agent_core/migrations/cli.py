@@ -20,6 +20,10 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from agent_core.migrations.from_esby_install import (
+    migrate_esby_install,
+    to_backup_payload as esby_to_backup_payload,
+)
 from agent_core.migrations.from_loriah_vault import (
     DEFAULT_VAULT_PATHS,
     migrate_loriah_vault,
@@ -110,6 +114,77 @@ def from_loriah_vault(
     )
     console.print(
         "[dim]next:[/dim] dcos restore {p} --skip-schema-check [--yes]".format(p=output_path)
+    )
+
+
+@migrate_group.command(name="from-esby-install")
+@click.argument(
+    "install_root",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+)
+@click.option(
+    "--output",
+    "-o",
+    "output_path",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Where to write the backup JSON.",
+)
+@click.option(
+    "--preset",
+    type=click.Choice(["cautious", "balanced", "aggressive"]),
+    default="balanced",
+    show_default=True,
+    help="AgentSettings preset (overridden by Esby's preferences.yaml if it sets autonomy_bias).",
+)
+@click.option(
+    "--include-old-vault",
+    is_flag=True,
+    help="Also chunk markdown from ../.old EsbyVault/Esby/ into Thoughts.",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would migrate without writing.")
+def from_esby_install(
+    install_root: Path,
+    output_path: Path,
+    preset: str,
+    include_old_vault: bool,
+    dry_run: bool,
+) -> None:
+    """Read Esby's installed-chief-of-staff dir; produce a backup JSON for restore_backup."""
+    state = migrate_esby_install(
+        install_root,
+        settings_preset=preset,
+        include_old_vault=include_old_vault,
+    )
+
+    table = Table(title=f"Esby install migration ({install_root.name})")
+    table.add_column("category", style="cyan")
+    table.add_column("count", style="green", justify="right")
+    table.add_row("People (relationship CRM)", str(len(state.people)))
+    table.add_row("LearningRules (translated policy_rules)", str(len(state.learning_rules)))
+    table.add_row("Thoughts (configs + setup-report + old vault if any)", str(len(state.thoughts)))
+    table.add_row("Sources (provenance rows)", str(len(state.sources)))
+    table.add_row("Inputs skipped (missing)", str(len(state.skipped_inputs)))
+    console.print(table)
+
+    if state.skipped_inputs:
+        console.print(
+            f"[yellow]heads-up:[/yellow] {len(state.skipped_inputs)} expected input(s) "
+            f"missing: {state.skipped_inputs}"
+        )
+
+    if dry_run:
+        console.print("[dim]--dry-run: payload not written.[/dim]")
+        return
+
+    payload = esby_to_backup_payload(state)
+    write_backup(payload, output_path)
+    size = output_path.stat().st_size
+    console.print(
+        f"[green]wrote backup[/green] {output_path} ({size:,} bytes)"
+    )
+    console.print(
+        "[dim]next:[/dim] ikb restore {p} --skip-schema-check [--yes]".format(p=output_path)
     )
 
 

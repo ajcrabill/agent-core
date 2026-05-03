@@ -26,6 +26,7 @@ from agent_core.ops.cli import (
     restore_command,
     setup_command,
 )
+from agent_core.migrations.cli import migrate_group
 from agent_core.settings.cli import settings_group
 
 from ikb_agent import __version__
@@ -54,6 +55,7 @@ def cli() -> None:
 
 
 cli.add_command(settings_group, name="settings")
+cli.add_command(migrate_group, name="migrate")
 
 
 @cli.command(name="doctor")

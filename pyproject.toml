@@ -4,6 +4,22 @@ version = "0.0.1"
 description = "Workspace root for agent-core, dcos-agent, ikb-agent."
 requires-python = ">=3.11"
 
+# Pull every workspace member in as a dep so a bare `uv sync` from the
+# repo root installs all three packages + their console scripts (dcos /
+# ikb) in editable mode. Without this, `uv sync` resolves the workspace
+# but installs nothing into the venv — `uv run dcos` then errors with
+# "Failed to spawn: dcos / No such file or directory".
+dependencies = [
+    "agent-core",
+    "dcos-agent",
+    "ikb-agent",
+]
+
+[tool.uv.sources]
+agent-core = { workspace = true }
+dcos-agent = { workspace = true }
+ikb-agent = { workspace = true }
+
 [tool.uv.workspace]
 members = [
     "packages/agent-core",

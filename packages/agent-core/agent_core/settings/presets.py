@@ -86,7 +86,12 @@ PRESETS: dict[PresetName, dict[str, Any]] = {
             "synthetic_battery_enabled": False,
         },
         "notifications": {
-            "enabled": True,
+            # Opt-in. Tier 1 wizard doesn't collect a topic so enabling
+            # by default would fail doctor on every fresh install. Users
+            # opt in via:
+            #   agent settings set notifications.enabled=true \
+            #                       notifications.ntfy_topic=<your-topic>
+            "enabled": False,
             "urgency_floor": "critical",
             "daily_digest_enabled": True,
         },

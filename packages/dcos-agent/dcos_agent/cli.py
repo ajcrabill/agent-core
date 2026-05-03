@@ -30,10 +30,12 @@ from agent_core.migrations.cli import migrate_group
 from agent_core.ops.cli import (
     backup_command,
     doctor_command,
+    init_command,
     restore_command,
     setup_command,
 )
 from agent_core.settings.cli import settings_group
+from agent_core.web.cli import serve_command
 
 from dcos_agent import __version__
 from dcos_agent.defaults import (
@@ -175,6 +177,58 @@ def setup(ctx, tier, config_path):
     ctx.invoke(setup_command, tier=tier, config_path=config_path)
 
 
+@cli.command(name="init")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+    show_default="dcos config dir",
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+    show_default="dcos sqlite path",
+)
+@click.option("--rotate-token", is_flag=True, help="Generate a new API token even if one exists.")
+@click.pass_context
+def init(ctx, config_path, db_url, rotate_token):
+    """Bootstrap the schema + generate an API token. Run after `setup`."""
+    default_db_path().parent.mkdir(parents=True, exist_ok=True)
+    ctx.invoke(init_command, config_path=config_path, db_url=db_url, rotate_token=rotate_token)
+
+
+@cli.command(name="serve")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+    show_default="dcos config dir",
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+    show_default="dcos sqlite path",
+)
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8765, show_default=True, type=int)
+@click.option("--token", "api_token", default=None, help="Override API token (default: from secrets store).")
+@click.option("--reload", is_flag=True, help="Auto-reload on code changes (development only).")
+@click.pass_context
+def serve(ctx, config_path, db_url, host, port, api_token, reload):
+    """Start the agent_core.web FastAPI server (the OpenWebUI plugin's backend)."""
+    ctx.invoke(
+        serve_command,
+        config_path=config_path,
+        db_url=db_url,
+        host=host,
+        port=port,
+        api_token=api_token,
+        reload=reload,
+    )
+
+
 # ── dcos-specific commands ────────────────────────────────────────────────
 
 
@@ -261,6 +315,160 @@ def skills_describe(name: str) -> None:
         console.print(f"[bold]Seed rules ({len(skill.seed_rules)}):[/bold]")
         for r in skill.seed_rules:
             console.print(f"  • {r.correction}")
+
+
+@skills_group.command(name="run")
+@click.argument("name")
+@click.option(
+    "--input",
+    "input_str",
+    default=None,
+    help=(
+        "Input as JSON string. Use @path/to/file.json to read from a file, "
+        "or @- to read from stdin."
+    ),
+)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+    show_default="dcos config dir",
+)
+@click.option(
+    "--db-url",
+    default=None,
+    help="SQLAlchemy URL. Defaults to settings.storage.url.",
+)
+@click.option(
+    "--stub-llm",
+    is_flag=True,
+    help=(
+        "Force the StubLanguageModel even if a real LLM is configured. Useful "
+        "for verifying skill wiring without LLM cost."
+    ),
+)
+def skills_run(
+    name: str,
+    input_str: str | None,
+    config_path: Path,
+    db_url: str | None,
+    stub_llm: bool,
+) -> None:
+    """Invoke a registered skill with INPUT JSON. Prints the result.
+
+    Today's behavior: uses StubLanguageModel by default (skills that need
+    an LLM run with canned responses; useful for end-to-end wiring smoke).
+    Pass --no-stub-llm once Hermes vendoring lands and a real LanguageModel
+    is wired into the SkillContext.
+    """
+    import json
+    import sys as _sys
+
+    from agent_core.openbrain import OpenBrainStore
+    from agent_core.settings import SettingsManager
+    from agent_core.skills import (
+        SkillContext,
+        SkillRunner,
+        StubLanguageModel,
+        default_registry,
+    )
+    from agent_core.state.db import Database
+
+    # Resolve input
+    if input_str is None:
+        payload: dict = {}
+    elif input_str == "@-":
+        payload = json.loads(_sys.stdin.read())
+    elif input_str.startswith("@"):
+        with open(input_str[1:]) as f:
+            payload = json.load(f)
+    else:
+        payload = json.loads(input_str)
+
+    # Resolve settings + db
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    resolved_url = db_url or mgr.get("storage.url")
+    db = Database(resolved_url) if resolved_url else None
+
+    # Build context. Stub LLM is the only option until Hermes vendoring
+    # lands — but we make it smart enough that wiring smokes succeed:
+    # pattern-match the skill's system prompt and return plausible canned
+    # JSON / structured text so each shipped skill produces valid output.
+    openbrain = (
+        OpenBrainStore.from_settings(mgr.settings, db) if db else None
+    )
+    ctx = SkillContext(
+        settings=mgr.settings,
+        db=db,
+        language_model=_smart_stub_lm(),
+        openbrain=openbrain,
+    )
+
+    runner = SkillRunner(default_registry)
+    outcome = runner.run(name, payload, ctx)
+
+    # Convenience: also recognize ``stub_llm`` flag at the CLI level even
+    # though we always currently use a stub. Once Hermes lands, gate.
+    _ = stub_llm
+
+    if not outcome.succeeded:
+        console.print(f"[red]skill failed:[/red] {outcome.error}")
+        raise click.exceptions.Exit(1)
+
+    result = outcome.result
+    console.print(f"[green]✓[/green] {name} succeeded "
+                  f"(confidence={result.confidence:.2f})")
+    if result.rationale:
+        console.print(f"[dim]rationale:[/dim] {result.rationale}")
+    console.print()
+    console.print("[bold]output:[/bold]")
+    console.print(json.dumps(result.output.model_dump(), indent=2, default=str))
+    if result.references:
+        console.print()
+        console.print(f"[bold]references ({len(result.references)}):[/bold]")
+        for ref in result.references[:5]:
+            console.print(f"  • {ref}")
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────
+
+
+def _smart_stub_lm():
+    """Build a StubLanguageModel with canned plausible responses per skill.
+
+    Pattern-matched by the skill's system prompt — each shipped skill's
+    expected output shape is hardcoded here so `dcos skills run <name>`
+    succeeds end-to-end without a real LLM. When Hermes vendoring lands
+    we'll switch to a real LanguageModel and this helper retires.
+    """
+    from agent_core.skills import StubLanguageModel
+
+    return StubLanguageModel(
+        patterns=[
+            # email-triage expects a strict JSON {action, score, reasoning}
+            (
+                r"email triage classifier",
+                '{"action": "flag", "score": 0.85, "reasoning": "stub: would be classified by real LLM"}',
+            ),
+            # email-composer expects "SUBJECT: <line>\n---\n<body>"
+            (
+                r"email drafter",
+                "SUBJECT: (stub draft subject)\n---\nThis is a stub draft body.\nBest,\nStub",
+            ),
+            # document-creator expects free-form prose
+            (
+                r"document writer",
+                "(Stub draft body — would be written by a real LLM. Replace this stub when Hermes lands.)",
+            ),
+        ],
+        default="(stub-llm response — no skill-specific pattern matched)",
+    )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────

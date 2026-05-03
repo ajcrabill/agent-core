@@ -259,18 +259,133 @@ def setup_command(tier: int, config_path: Path | None) -> None:
         )
 
 
+# ── init: bootstrap schema + generate API token ──────────────────────────
+
+
+SECRETS_NAMESPACE = "agent_core"
+"""Namespace for agent-core's own secrets (web API token, etc.)."""
+
+API_TOKEN_KEY = "web.api_token"
+"""Secret key for the bearer token agent_core.web (and OpenWebUI plugin) use."""
+
+
+@click.command(name="init")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Path to agent.yml (default: env/cwd; used to discover db_url).",
+)
+@click.option(
+    "--db-url",
+    default=None,
+    help=(
+        "SQLAlchemy URL for the agent database. If omitted, reads from "
+        "settings.storage.url."
+    ),
+)
+@click.option(
+    "--rotate-token",
+    is_flag=True,
+    help="Force-generate a new API token even if one already exists.",
+)
+def init_command(
+    config_path: Path | None, db_url: str | None, rotate_token: bool
+) -> None:
+    """Bootstrap a fresh install: create the schema + generate an API token.
+
+    Run this AFTER ``setup`` and BEFORE ``serve``. Idempotent — calling
+    twice on an already-initialized install is safe (schema is a no-op
+    when present; token rotation is opt-in via ``--rotate-token``).
+    """
+    import secrets as _secrets
+
+    from agent_core.secrets import default_store
+    from agent_core.state.db import Database
+
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        sys.exit(1)
+
+    resolved_url = db_url or mgr.get("storage.url")
+    if not resolved_url:
+        console.print(
+            "[red]no db url:[/red] pass --db-url or set storage.url in agent.yml"
+        )
+        sys.exit(1)
+
+    # Bootstrap schema via alembic — both creates the schema AND stamps
+    # alembic_version so future `alembic upgrade head` runs cleanly.
+    try:
+        _alembic_upgrade_head(resolved_url)
+    except Exception as e:
+        console.print(f"[red]schema bootstrap failed:[/red] {e}")
+        sys.exit(1)
+    console.print(f"[green]schema at head[/green] ({resolved_url})")
+
+    # Generate / load API token.
+    store = default_store()
+    existing = store.get(SECRETS_NAMESPACE, API_TOKEN_KEY)
+    if existing and not rotate_token:
+        console.print(
+            "[dim]API token already present in secrets store; "
+            "pass --rotate-token to replace it.[/dim]"
+        )
+        token = existing
+    else:
+        token = _secrets.token_urlsafe(32)
+        try:
+            store.set(SECRETS_NAMESPACE, API_TOKEN_KEY, token)
+        except Exception as e:
+            console.print(f"[yellow]could not store token:[/yellow] {e}")
+            console.print(
+                f"[yellow]save manually:[/yellow] AGENTCORE_AGENT_CORE_WEB_API_TOKEN={token}"
+            )
+
+    console.print()
+    console.print("[bold]API token (paste into your OpenWebUI plugin):[/bold]")
+    console.print(f"  {token}")
+    console.print()
+    console.print("[dim]next:[/dim] run [cyan]doctor[/cyan] to verify, then [cyan]serve[/cyan] to start the API.")
+
+
 # ── Group ───────────────────────────────────────────────────────────────────
 
 
 @click.group(name="ops")
 def ops_group() -> None:
-    """doctor / backup / restore / setup — operational commands for installed agents."""
+    """doctor / backup / restore / setup / init — operational commands."""
 
 
 ops_group.add_command(doctor_command)
 ops_group.add_command(backup_command)
 ops_group.add_command(restore_command)
 ops_group.add_command(setup_command)
+ops_group.add_command(init_command)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────
+
+
+def _alembic_upgrade_head(db_url: str) -> None:
+    """Run ``alembic upgrade head`` against ``db_url`` using the bundled
+    migration script directory. Idempotent — no-op when already at head.
+
+    Lives here (not in agent_core.state.db) because it's the install-time
+    operation, not a runtime concern. Database.create_all() stays for tests
+    where alembic overhead isn't worth it."""
+    from importlib.resources import files
+
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(files("agent_core.state.migrations")))
+    cfg.set_main_option("sqlalchemy.url", db_url)
+    command.upgrade(cfg, "head")
 
 
 def main() -> None:

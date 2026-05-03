@@ -23,11 +23,13 @@ from rich.table import Table
 from agent_core.ops.cli import (
     backup_command,
     doctor_command,
+    init_command,
     restore_command,
     setup_command,
 )
 from agent_core.migrations.cli import migrate_group
 from agent_core.settings.cli import settings_group
+from agent_core.web.cli import serve_command
 
 from ikb_agent import __version__
 from ikb_agent.defaults import (
@@ -154,6 +156,57 @@ def setup(ctx, tier, config_path):
     """Run the interactive setup wizard."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
     ctx.invoke(setup_command, tier=tier, config_path=config_path)
+
+
+@cli.command(name="init")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+    show_default="ikb config dir",
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+    show_default="env IKB_DB_URL or local socket",
+)
+@click.option("--rotate-token", is_flag=True, help="Generate a new API token even if one exists.")
+@click.pass_context
+def init(ctx, config_path, db_url, rotate_token):
+    """Bootstrap the schema + generate an API token. Run after `setup`."""
+    ctx.invoke(init_command, config_path=config_path, db_url=db_url, rotate_token=rotate_token)
+
+
+@cli.command(name="serve")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+    show_default="ikb config dir",
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+    show_default="env IKB_DB_URL or local socket",
+)
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8765, show_default=True, type=int)
+@click.option("--token", "api_token", default=None, help="Override API token (default: from secrets store).")
+@click.option("--reload", is_flag=True, help="Auto-reload on code changes (development only).")
+@click.pass_context
+def serve(ctx, config_path, db_url, host, port, api_token, reload):
+    """Start the agent_core.web FastAPI server (the OpenWebUI plugin's backend)."""
+    ctx.invoke(
+        serve_command,
+        config_path=config_path,
+        db_url=db_url,
+        host=host,
+        port=port,
+        api_token=api_token,
+        reload=reload,
+    )
 
 
 @cli.command(name="info")

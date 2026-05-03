@@ -18,8 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-# Locked when Sprint 10 lands
-# "dcos" = "dcos_agent.cli:main"
+dcos = "dcos_agent.cli:main"
 
 [tool.uv.sources]
 agent-core = { workspace = true }

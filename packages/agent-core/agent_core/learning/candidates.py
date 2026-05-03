@@ -1,11 +1,12 @@
 """CorrectionCandidates — auto-detected corrections awaiting promotion.
 
 The capture detector (Sprint 5b, LLM-driven) writes CorrectionCandidate rows
-when it spots the principal correcting the agent in chat. The user reviews
-each one in the weekly-review surface and either:
+when it spots the principal correcting the agent in any inbound channel
+(chat, email, terminal, web UI). The user reviews each one in the weekly-
+review surface and either:
 
   - **Promotes** it to a real LearningRule (one-click in the UX)
-  - **Rejects** it (false positive — the detector misread the chat)
+  - **Rejects** it (false positive — the detector misread the message)
 
 This module is the API the UX (and tests) call.
 """

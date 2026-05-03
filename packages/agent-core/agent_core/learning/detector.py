@@ -1,9 +1,10 @@
-"""Correction detector — spot principal corrections in chat, surface as candidates.
+"""Correction detector — spot principal corrections in any inbound, surface as candidates.
 
-When the principal corrects the agent in chat ("no, do it like X", "stop
-doing Y", "actually use Z"), the detector should notice and create a
-CorrectionCandidate so the user can one-click promote it to a learning rule
-during the weekly review.
+When the principal corrects the agent ("no, do it like X", "stop doing Y",
+"actually use Z") — whether the correction comes via chat, email, terminal,
+web UI, or any other channel where the principal sends text — the detector
+should notice and create a CorrectionCandidate so the user can one-click
+promote it to a learning rule during the weekly review.
 
 This module ships:
 
@@ -11,10 +12,11 @@ This module ships:
                        Hermes vendors)
   HeuristicDetector  — pattern-based fallback that runs without a model;
                        catches obvious cases ("don't do X", "use Y instead",
-                       etc.) without false-positives on neutral chat.
+                       etc.) without false-positives on neutral messages.
 
-The chat layer wires the detector into incoming messages. Each detected
-candidate flows into CorrectionCandidates.propose().
+Wiring: any channel that receives a principal message (chat surface, mail
+poller, terminal CLI, web UI form post) calls the detector once per inbound,
+and each detected candidate flows into CorrectionCandidates.propose().
 """
 
 from __future__ import annotations

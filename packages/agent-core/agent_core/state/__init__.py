@@ -6,6 +6,13 @@ management, schema migrations, and the markdown<->db projection layer.
 The database is the source of truth. The vault is a generated projection.
 """
 
+from agent_core.state.db import (
+    Backend,
+    Database,
+    default_postgres_dsn,
+    default_sqlite_path,
+    libpq_dsn_to_sqlalchemy_url,
+)
 from agent_core.state.models import (
     ActionClass,
     ActionLog,
@@ -56,6 +63,12 @@ from agent_core.state.models import (
 )
 
 __all__ = [
+    # Database
+    "Backend",
+    "Database",
+    "default_sqlite_path",
+    "default_postgres_dsn",
+    "libpq_dsn_to_sqlalchemy_url",
     # Identity
     "Identity",
     "Peer",

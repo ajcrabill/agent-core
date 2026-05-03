@@ -1,0 +1,3 @@
+[submodule "packages/open-webui-fork"]
+	path = packages/open-webui-fork
+	url = https://github.com/ajcrabill/open-webui-agent.git

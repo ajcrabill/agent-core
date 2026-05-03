@@ -5,33 +5,102 @@ generated projection.
 
 ## What's here so far (Sprint 1, in progress)
 
-- `models.py` — SQLModel definitions for the foundation tables
+- `models.py` — SQLModel definitions for **all 26 operational tables**
 - `__init__.py` — public API
+- 20 schema-smoke tests in `tests/test_state_models.py`
 
 ## What's coming in this sprint
 
-- More tables (intercom, audits, action_log, openbrain, content-creation)
 - `db.py` — dual-backend `Database` class (sqlite default for dcos-agent;
-  postgres default for ikb-agent)
-- `migrations/` — Alembic config + initial migration
+  postgres default for ikb-agent), engine factory, session helper
+- `migrations/` — Alembic config + initial migration (auto-generated from the
+  models above)
 - `renderer.py` — db → markdown projection (vault is generated)
-- `watcher.py` — markdown → db (for the few human-edited files: kanban,
-  conversation journal)
+- `watcher.py` — markdown → db (for the few human-edited surfaces: kanban
+  edits, conversation journal)
 
-## Schema overview (current commit)
+## Schema overview (current commit — 26 tables)
 
-```
-identity            ← the agent's own identity (one row, id='self')
-peer                ← discovered mesh peers
-obligation          ← tasks; status: inbox|in-progress|waiting|done
-obligation_event    ← append-only audit log of state transitions
-plan                ← per-obligation plan (steps, current_step, status)
-completion_check    ← append-only log of self-tests against criteria
-learning_rule       ← supervised-learning rules; tags determine loading scope
-rule_firing         ← per-firing log; powers firing visibility
-correction_candidate ← auto-detected corrections awaiting promotion to rules
-```
+### Identity (2)
+| table | purpose |
+|---|---|
+| `identity` | The agent's own identity (one row, `id='self'`) |
+| `peer` | Discovered mesh peers (Sprint 6 populates) |
 
-All tables compile cleanly to both SQLite and Postgres. JSON columns map to
-JSONB on Postgres / JSON-as-TEXT on SQLite. Enums are str-mixin classes stored
-as TEXT (no native Postgres ENUM types — keeps migrations portable).
+### Work (4) — the goal-directed core (L20)
+| table | purpose |
+|---|---|
+| `obligation` | Tasks; status: inbox/in-progress/waiting/done; **has structured `completion_criteria`** |
+| `obligation_event` | Append-only audit log of state transitions |
+| `plan` | Per-obligation plan (steps array, current_step, status) |
+| `completion_check` | Append-only log of self-tests against criteria |
+
+### Learning (3)
+| table | purpose |
+|---|---|
+| `learning_rule` | Supervised-learning rules; tags determine loading scope (`general` or skill name) |
+| `rule_firing` | Per-firing log; powers firing visibility + "rules that haven't fired in 90d" |
+| `correction_candidate` | Auto-detected corrections from chat awaiting promotion |
+
+### Delegations (1)
+| table | purpose |
+|---|---|
+| `delegation` | Work the agent (or principal) handed off; follow-up tracking |
+
+### Run / Incidents / Actions (3)
+| table | purpose |
+|---|---|
+| `run_log` | Per-skill-execution audit (cron, on-demand, plan-step) |
+| `incident` | Failures the agent must consult before claiming completion |
+| `action_log` | **Every autonomous action** — `obligation_id` REQUIRED per L20 |
+
+### Quality (2)
+| table | purpose |
+|---|---|
+| `quality_audit` | Per-audit results (score, primary_notes, sampling_reason) |
+| `quality_score` | Running per-(model, task_type); auto-undelegation reads here |
+
+### Mesh (2)
+| table | purpose |
+|---|---|
+| `intercom_message` | Inter-agent message store (Sprint 6 implements wire protocol) |
+| `intercom_ack` | Per-message ack log (detects silent drops) |
+
+### Sessions / Metrics (2)
+| table | purpose |
+|---|---|
+| `session` | Lightweight session summaries (full transcripts in Hermes' state.db) |
+| `metric` | Generic time-series metric |
+
+### Content creation (4) — Sprint 5c populates
+| table | purpose |
+|---|---|
+| `exemplar` | Canonical "good output"; `is_synthetic` flag for L21 battery items |
+| `iteration` | One (raw → attempts → corrections → final) cycle; `is_synthetic` flag |
+| `template` | Starting skeleton with placeholders |
+| `calibration` | Per-skill confidence + `autonomous_mode` gate |
+
+### OpenBrain (3) — Sprint 7 adds vector column
+| table | purpose |
+|---|---|
+| `thought` | Unit of semantic memory (Sprint 7 adds backend-conditional `embedding`) |
+| `thought_source` | Provenance + freshness + authority + visibility ACL hint |
+| `ingestion_run` | Per-pipeline-run audit |
+
+## Design choices (encoded in tests as regression guards)
+
+- Enums use `StrEnum` (Python 3.11+); columns mapped to `VARCHAR(32)` on both
+  backends — **no native PG ENUM types**, keeps migrations portable.
+- JSON columns use SQLAlchemy's `JSON` type → `JSONB` on Postgres, `JSON-as-TEXT`
+  on SQLite.
+- Foreign keys use string IDs (UUID-as-text) for cross-table portability.
+- Surrogate integer PKs only for high-frequency append-only tables
+  (events, rule firings, completion checks, run log, etc.).
+- `obligation.plan_id` deliberately NOT defined — derives the active plan via
+  `SELECT * FROM plan WHERE obligation_id=? AND status != 'verified' ORDER BY
+  created_at DESC LIMIT 1`. Avoids FK cycle.
+- `action_log.obligation_id` is **NOT NULL** — every autonomous action traces to
+  an obligation per L20. Test guards against regression.
+- `exemplar.is_synthetic` and `iteration.is_synthetic` distinguish natural
+  training data from L21 synthetic-battery items (so calibration can detect
+  overfit-to-synthetic).

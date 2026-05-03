@@ -15,9 +15,20 @@ import warnings
 
 import pytest
 from agent_core.state import (
+    ActionClass,
+    ActionLog,
+    ActionOutcome,
+    Calibration,
     CorrectionCandidate,
     CorrectionCandidateStatus,
+    Exemplar,
     Identity,
+    Incident,
+    IncidentStatus,
+    IntercomMessage,
+    IntercomState,
+    Iteration,
+    IterationStatus,
     LearningRule,
     Obligation,
     ObligationEvent,
@@ -30,15 +41,42 @@ from sqlalchemy.schema import CreateTable
 from sqlmodel import Session, SQLModel, create_engine, select
 
 EXPECTED_TABLES = {
+    # Identity
     "identity",
     "peer",
+    # Work
     "obligation",
     "obligation_event",
     "plan",
     "completion_check",
+    # Learning
     "learning_rule",
     "rule_firing",
     "correction_candidate",
+    # Delegations
+    "delegation",
+    # Run / Incidents / Actions
+    "run_log",
+    "incident",
+    "action_log",
+    # Quality
+    "quality_audit",
+    "quality_score",
+    # Mesh
+    "intercom_message",
+    "intercom_ack",
+    # Sessions / Metrics
+    "session",
+    "metric",
+    # Content creation
+    "exemplar",
+    "iteration",
+    "template",
+    "calibration",
+    # OpenBrain
+    "thought",
+    "thought_source",
+    "ingestion_run",
 }
 
 
@@ -198,3 +236,111 @@ def test_correction_candidate_pending(session: Session) -> None:
     fetched = session.exec(select(CorrectionCandidate)).first()
     assert fetched.status == CorrectionCandidateStatus.pending
     assert fetched.confidence == 0.85
+
+
+# ── Goal-directed-operation enforcement (L20) ────────────────────────────────
+
+
+def test_action_log_requires_obligation_id() -> None:
+    """Per L20, every autonomous action MUST trace to an obligation.
+    `obligation_id` is non-nullable."""
+    table = SQLModel.metadata.tables["action_log"]
+    assert table.c.obligation_id.nullable is False, (
+        "action_log.obligation_id must be NOT NULL per L20 — every action traces to an obligation"
+    )
+
+
+def test_action_log_with_obligation(session: Session) -> None:
+    ob = Obligation(title="Send the thing")
+    session.add(ob)
+    session.commit()
+
+    al = ActionLog(
+        obligation_id=ob.id,
+        action_class=ActionClass.send_email_external,
+        target="x@example.com",
+        rationale="Plan step 2 of obligation 'Send the thing'; rules: lr-024 (signature).",
+        outcome=ActionOutcome.succeeded,
+    )
+    session.add(al)
+    session.commit()
+
+    fetched = session.exec(select(ActionLog)).first()
+    assert fetched.obligation_id == ob.id
+    assert fetched.action_class == ActionClass.send_email_external
+    assert fetched.outcome == ActionOutcome.succeeded
+
+
+def test_incident_default_open(session: Session) -> None:
+    inc = Incident(title="Tool call failed", source="tool_call")
+    session.add(inc)
+    session.commit()
+    assert session.exec(select(Incident)).first().status == IncidentStatus.open
+
+
+# ── Mesh / Intercom ──────────────────────────────────────────────────────────
+
+
+def test_intercom_message_default_pending(session: Session) -> None:
+    msg = IntercomMessage(sender="loriah", recipient="esby", body="ping")
+    session.add(msg)
+    session.commit()
+    fetched = session.exec(select(IntercomMessage)).first()
+    assert fetched.state == IntercomState.pending
+    assert fetched.ttl_seconds == 7 * 24 * 3600
+
+
+# ── Content creation ─────────────────────────────────────────────────────────
+
+
+def test_exemplar_default_not_synthetic(session: Session) -> None:
+    """Exemplars from natural iterations have is_synthetic=False; only the
+    L21 synthetic-battery sets True."""
+    ex = Exemplar(skill="email-composer", content="Hi X, …", title="BD outreach #1")
+    session.add(ex)
+    session.commit()
+    fetched = session.exec(select(Exemplar)).first()
+    assert fetched.is_synthetic is False
+
+
+def test_iteration_default_in_progress_and_natural(session: Session) -> None:
+    it = Iteration(skill="document-creator", raw_input="rough notes here")
+    session.add(it)
+    session.commit()
+    fetched = session.exec(select(Iteration)).first()
+    assert fetched.status == IterationStatus.in_progress
+    assert fetched.is_synthetic is False
+    assert fetched.attempts == []
+    assert fetched.corrections == []
+
+
+def test_calibration_starts_with_human_review_required(session: Session) -> None:
+    """New skills start with autonomous_mode=False; quality auditor flips it
+    True only after threshold confidence + N consecutive ratifications."""
+    cal = Calibration(skill="document-creator")
+    session.add(cal)
+    session.commit()
+    fetched = session.exec(select(Calibration)).first()
+    assert fetched.autonomous_mode is False
+    assert fetched.confidence == 0.0
+    assert fetched.autonomous_mode_threshold == 0.85
+
+
+def test_learning_rule_supersede_chain(session: Session) -> None:
+    """Older rules can be replaced by newer ones via superseded_by FK."""
+    old = LearningRule(correction="Use periods.", source="old")
+    session.add(old)
+    session.commit()
+    new = LearningRule(
+        correction="Use periods. Avoid em-dashes.",
+        source="newer correction",
+        superseded_by=None,
+    )
+    session.add(new)
+    session.commit()
+    # Mark old as superseded by new
+    old.superseded_by = new.id
+    session.commit()
+
+    fetched = session.exec(select(LearningRule).where(LearningRule.id == old.id)).first()
+    assert fetched.superseded_by == new.id

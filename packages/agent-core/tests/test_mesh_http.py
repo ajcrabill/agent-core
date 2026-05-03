@@ -44,6 +44,7 @@ def _new_db(instance_name: str) -> Database:
     fd, path = tempfile.mkstemp(prefix=f"mesh-test-{instance_name}-", suffix=".db")
     Path(path).unlink()  # let Database create it
     import os
+
     os.close(fd)
     db = Database.sqlite(path)
     db.create_all()

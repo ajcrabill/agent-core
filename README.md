@@ -89,4 +89,8 @@ MIT. See [LICENSE](LICENSE).
 
 ## Author
 
-[AJ Crabill](https://github.com/ajcrabill). Architectural design and refactor planning by Loriah (the dCoS this project descends from).
+[AJ Crabill](https://github.com/ajcrabill). Architectural design produced collaboratively with the AI agent that this project descends from.
+
+---
+
+> **Generic by default.** `dcos-agent` and `ikb-agent` are product names. The agent *instance* you install is named during setup — pick whatever you want ("Sage", "Maven", "Ada", your dog's name, anything). The setup wizard never assumes a default identity.

@@ -18,7 +18,9 @@ agent-core init                  # same wizard, defaults to PG + pgvector
 
 ## Setup wizard
 
-The wizard is a chat conversation, not a config file. Three tiers:
+The wizard is a chat conversation, not a config file. **You name your agent instance during setup** — `dcos-agent` and `ikb-agent` are product names; your install is whatever you want it to be ("Sage", "Maven", "Ada", or even just "Assistant"). No sticky default.
+
+Three tiers:
 
 - **Just defaults** (~10 min) — answer the bare minimum, accept sensible defaults
 - **Recommended** (~30 min) — also connects Gmail/Calendar, picks OpenBrain ingest sources, configures mesh peers

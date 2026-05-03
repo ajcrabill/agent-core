@@ -53,17 +53,24 @@ api_keys.yaml
 secrets/
 
 # --- Local state, dbs, vaults — NEVER commit ---
-state/
+# Runtime database files (any path)
 *.db
 *.db-shm
 *.db-wal
 *.sqlite
 *.sqlite3
-vault/
-vaults/
+# Common runtime state directories (anchored to repo root or hidden)
+/state/
+.state/
+# User vaults
+/vault/
+/vaults/
+# Hidden runtime dirs at any depth
 .hermes/
 .dcos/
 .ikb/
+# uv-managed runtime
+.python-version
 
 # --- Logs ---
 logs/

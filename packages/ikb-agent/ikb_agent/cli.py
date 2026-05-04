@@ -73,9 +73,9 @@ cli.add_command(migrate_group, name="migrate")
 )
 @click.option(
     "--db-url",
-    default=lambda: default_db_url(),
-    show_default="env IKB_DB_URL or local socket",
-    help="SQLAlchemy URL for the agent database.",
+    default=None,
+    show_default="reads from settings.storage.url",
+    help="SQLAlchemy URL for the agent database. Override settings.storage.url.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of a table.")
 @click.pass_context

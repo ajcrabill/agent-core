@@ -94,9 +94,9 @@ cli.add_command(migrate_group, name="migrate")
 )
 @click.option(
     "--db-url",
-    default=lambda: default_db_url() if default_db_path().exists() else None,
-    show_default="dcos sqlite path if it exists",
-    help="SQLAlchemy URL for the agent database.",
+    default=None,
+    show_default="reads from settings.storage.url",
+    help="SQLAlchemy URL for the agent database. Override settings.storage.url.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of a table.")
 @click.pass_context

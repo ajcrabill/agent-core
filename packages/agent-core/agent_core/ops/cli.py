@@ -53,7 +53,10 @@ console = Console()
 @click.option(
     "--db-url",
     default=None,
-    help="SQLAlchemy URL for the agent database. If omitted, doctor skips db checks.",
+    help=(
+        "SQLAlchemy URL for the agent database. When omitted, reads "
+        "settings.storage.url (same as init). Set to '' to force-skip db checks."
+    ),
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON instead of a table.")
 def doctor_command(config_path: Path | None, db_url: str | None, as_json: bool) -> None:
@@ -63,7 +66,8 @@ def doctor_command(config_path: Path | None, db_url: str | None, as_json: bool) 
     except Exception as e:
         console.print(f"[red]could not load settings:[/red] {e}")
         sys.exit(1)
-    db = Database(db_url) if db_url else None
+    resolved_url = db_url if db_url is not None else mgr.get("storage.url")
+    db = Database(resolved_url) if resolved_url else None
     ctx = DoctorContext(settings=mgr, db=db)
     report = Doctor().run(ctx)
 

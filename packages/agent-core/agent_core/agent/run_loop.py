@@ -69,6 +69,10 @@ class TickReport:
     duration_seconds: float
     errors: list[str]
     triage: TriageReport | None = None
+    # Sprint 20: scheduled digest delivery
+    digest_delivery_attempted: bool = False
+    digest_delivery_sent: bool = False
+    digest_delivery_reason: str | None = None
 
 
 # ── Single tick ────────────────────────────────────────────────────────────
@@ -84,13 +88,14 @@ def run_tick(
     triage_enabled: bool = True,
     triage_limit: int = 20,
     tick_number: int = 0,
+    digest_delivery_enabled: bool = True,
 ) -> TickReport:
     """One iteration of the autonomous loop.
 
     Args:
         db: agent-core Database.
         settings: AgentSettings (or SettingsManager — drilled into ``.settings``).
-        dispatcher: NotificationDispatcher. None → no notifications.
+        dispatcher: NotificationDispatcher. None → no notifications + no digest delivery.
         pipeline_monitor: pre-built PipelineMonitor. None → built from settings.
         language_model: pre-built LanguageModel for triage. None → built from
             settings + secrets store. Triage skipped if construction fails.
@@ -99,6 +104,10 @@ def run_tick(
         triage_limit: Max obligations to triage per tick (back-pressure on
             large inboxes — trickle through over multiple ticks).
         tick_number: monotonic counter for logs.
+        digest_delivery_enabled: If True (default) and a dispatcher is given,
+            attempt cadenced digest delivery at the end of each tick. The
+            cadence is governed by settings.notifications.digest_period_hours;
+            most ticks will return ``skipped_too_recent``.
 
     Returns a ``TickReport``. Never raises — errors land in ``report.errors``.
     """
@@ -182,6 +191,38 @@ def run_tick(
         )
         errors.extend(triage_report.errors)
 
+    # 4. Cadenced digest delivery. Each tick checks "is it time?" — the
+    # delivery helper short-circuits with skipped_too_recent if not. The
+    # period is settings.notifications.digest_period_hours (default 24).
+    digest_attempted = False
+    digest_sent = False
+    digest_reason: str | None = None
+    if digest_delivery_enabled and dispatcher is not None:
+        try:
+            from agent_core.actions.digest import (
+                DailyDigestBuilder,
+                deliver_digest,
+            )
+
+            builder = DailyDigestBuilder.from_settings(settings_obj, db)
+            delivery = deliver_digest(
+                db=db,
+                dispatcher=dispatcher,
+                builder=builder,
+                # Tick deliveries respect both knobs — the user owns
+                # cadence + floor via settings. Explicit `dcos digest --send`
+                # is the bypass surface.
+                force=False,
+                bypass_floor=False,
+                send_when_empty=False,
+            )
+            digest_attempted = True
+            digest_sent = delivery.sent
+            digest_reason = delivery.reason
+        except Exception as e:
+            logger.exception("digest delivery failed (tick %d)", tick_number)
+            errors.append(f"digest delivery: {e}")
+
     return TickReport(
         tick_number=tick_number,
         stalled_total=len(scan_result.stalled),
@@ -192,6 +233,9 @@ def run_tick(
         duration_seconds=time.time() - started,
         errors=errors,
         triage=triage_report,
+        digest_delivery_attempted=digest_attempted,
+        digest_delivery_sent=digest_sent,
+        digest_delivery_reason=digest_reason,
     )
 
 
@@ -492,6 +536,13 @@ def _default_on_tick(report: TickReport) -> None:
             f"{k}={v}" for k, v in sorted(report.triage.by_action.items())
         )
         summary += f"; triaged {report.triage.triaged} ({actions})"
+    if report.digest_delivery_attempted:
+        if report.digest_delivery_sent:
+            summary += "; digest sent"
+        elif report.digest_delivery_reason and report.digest_delivery_reason != "skipped_too_recent":
+            # Stay quiet on the noisy default ("skipped_too_recent" is the
+            # boring case; only surface unusual reasons).
+            summary += f"; digest: {report.digest_delivery_reason}"
     if report.errors:
         summary += f" — errors: {report.errors}"
     logger.info(summary)

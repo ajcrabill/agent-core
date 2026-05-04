@@ -587,3 +587,230 @@ def test_digest_not_empty_when_only_triage_activity() -> None:
     md = DailyDigestBuilder(db).build().as_markdown()
     assert "Nothing to report" not in md
     assert "Auto-triage decisions" in md
+
+
+# ── Sprint 20: scheduled digest delivery ─────────────────────────────────────
+
+
+def _seed_closed_obligation(db) -> None:
+    with db.session() as s:
+        s.add(
+            Obligation(
+                title="finished thing",
+                status=ObligationStatus.done,
+                completed_at=utcnow(),
+            )
+        )
+        s.commit()
+
+
+def _make_dispatcher(*, urgency_floor=None, enabled=True):
+    from agent_core.notifications import NotificationDispatcher, NoopTransport, Urgency
+
+    floor = urgency_floor if urgency_floor is not None else Urgency.critical
+    return NotificationDispatcher(NoopTransport(), enabled=enabled, urgency_floor=floor)
+
+
+class _RecordingTransport:
+    """Captures send calls for assertions; passes everything through."""
+
+    name = "recording"
+
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    def send(self, title, body, *, priority=3, tags=None):
+        self.calls.append(
+            {"title": title, "body": body, "priority": priority, "tags": tags or []}
+        )
+        return True
+
+
+def test_deliver_digest_force_send_writes_runlog_with_success_true():
+    from agent_core.actions.digest import DIGEST_DELIVERY_SKILL, deliver_digest
+    from agent_core.state.models import RunLog
+    from sqlmodel import select
+
+    db = _empty_db()
+    _seed_closed_obligation(db)
+    dispatcher = _make_dispatcher()  # critical floor
+
+    report = deliver_digest(
+        db=db, dispatcher=dispatcher, force=True, bypass_floor=True
+    )
+
+    assert report.sent
+    assert report.reason == "sent"
+    assert report.last_sent_at is not None
+
+    with db.session() as s:
+        rows = list(s.exec(select(RunLog).where(RunLog.skill == DIGEST_DELIVERY_SKILL)).all())
+    assert len(rows) == 1
+    assert rows[0].success is True
+    assert rows[0].metadata_json["force"] is True
+
+
+def test_deliver_digest_skips_too_recent_when_within_period():
+    """Second call within period_hours should be cadence-gated."""
+    from agent_core.actions.digest import deliver_digest
+
+    db = _empty_db()
+    _seed_closed_obligation(db)
+    dispatcher = _make_dispatcher()
+
+    r1 = deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=True)
+    assert r1.sent
+
+    r2 = deliver_digest(db=db, dispatcher=dispatcher, period_hours=24)
+    assert not r2.sent
+    assert r2.reason == "skipped_too_recent"
+    assert r2.last_sent_at == r1.last_sent_at  # didn't move forward
+
+
+def test_deliver_digest_force_overrides_cadence():
+    from agent_core.actions.digest import deliver_digest
+
+    db = _empty_db()
+    _seed_closed_obligation(db)
+    dispatcher = _make_dispatcher()
+
+    deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=True)
+    r2 = deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=True)
+    # force=True bypasses cadence: should send again
+    assert r2.sent
+
+
+def test_deliver_digest_skips_empty_window_by_default():
+    """Empty window → skipped_empty, doesn't burn the cadence cursor."""
+    from agent_core.actions.digest import deliver_digest
+
+    db = _empty_db()
+    dispatcher = _make_dispatcher()
+
+    report = deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=True)
+    assert not report.sent
+    assert report.reason == "skipped_empty"
+    # Subsequent call after seeding should NOT be cadence-gated (the empty
+    # skip didn't burn the cursor — RunLog row had success=False).
+    _seed_closed_obligation(db)
+    r2 = deliver_digest(db=db, dispatcher=dispatcher, bypass_floor=True)
+    assert r2.sent, f"expected send after seeding; got {r2.reason}"
+
+
+def test_deliver_digest_send_when_empty_overrides_empty_skip():
+    from agent_core.actions.digest import deliver_digest
+
+    db = _empty_db()
+    dispatcher = _make_dispatcher()
+
+    report = deliver_digest(
+        db=db,
+        dispatcher=dispatcher,
+        force=True,
+        bypass_floor=True,
+        send_when_empty=True,
+    )
+    assert report.sent
+
+
+def test_deliver_digest_below_floor_returns_below_floor_when_not_bypassed():
+    """Without bypass_floor, default critical floor drops info-urgency digest."""
+    from agent_core.actions.digest import deliver_digest
+
+    db = _empty_db()
+    _seed_closed_obligation(db)
+    dispatcher = _make_dispatcher()  # critical floor
+
+    report = deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=False)
+    assert not report.sent
+    assert report.reason == "below_floor"
+
+
+def test_deliver_digest_respects_floor_when_set_low():
+    """floor=info should permit info-urgency digest delivery."""
+    from agent_core.actions.digest import deliver_digest
+    from agent_core.notifications import Urgency
+
+    db = _empty_db()
+    _seed_closed_obligation(db)
+    dispatcher = _make_dispatcher(urgency_floor=Urgency.info)
+
+    report = deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=False)
+    assert report.sent
+
+
+def test_deliver_digest_disabled_dispatcher_returns_disabled():
+    from agent_core.actions.digest import deliver_digest
+
+    db = _empty_db()
+    _seed_closed_obligation(db)
+    dispatcher = _make_dispatcher(enabled=False)
+
+    # bypass_floor=True path
+    report = deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=True)
+    assert not report.sent
+    assert report.reason == "disabled"
+
+
+def test_deliver_digest_calls_transport_with_rendered_markdown():
+    from agent_core.actions.digest import deliver_digest
+    from agent_core.notifications import NotificationDispatcher, Urgency
+
+    db = _empty_db()
+    _seed_closed_obligation(db)
+    transport = _RecordingTransport()
+    dispatcher = NotificationDispatcher(transport, enabled=True, urgency_floor=Urgency.info)
+
+    report = deliver_digest(db=db, dispatcher=dispatcher, force=True)
+    assert report.sent
+    assert len(transport.calls) == 1
+    call = transport.calls[0]
+    assert "Daily digest" in call["title"]
+    assert "Closed obligations" in call["body"]
+    assert "finished thing" in call["body"]
+    assert "digest" in call["tags"]
+
+
+def test_deliver_digest_transport_failure_returns_transport_failed():
+    from agent_core.actions.digest import deliver_digest
+    from agent_core.notifications import NotificationDispatcher, Urgency
+
+    class _FailingTransport:
+        name = "failing"
+
+        def send(self, *args, **kwargs):
+            return False
+
+    db = _empty_db()
+    _seed_closed_obligation(db)
+    dispatcher = NotificationDispatcher(
+        _FailingTransport(), enabled=True, urgency_floor=Urgency.info
+    )
+    report = deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=True)
+    assert not report.sent
+    assert report.reason == "transport_failed"
+
+
+def test_deliver_digest_failed_send_does_not_burn_cadence_cursor():
+    """If delivery fails, the next call should NOT be skipped_too_recent."""
+    from agent_core.actions.digest import deliver_digest
+    from agent_core.notifications import NotificationDispatcher, Urgency
+
+    class _FailingTransport:
+        name = "failing"
+
+        def send(self, *args, **kwargs):
+            return False
+
+    db = _empty_db()
+    _seed_closed_obligation(db)
+    dispatcher = NotificationDispatcher(
+        _FailingTransport(), enabled=True, urgency_floor=Urgency.info
+    )
+
+    r1 = deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=True)
+    assert r1.reason == "transport_failed"
+    # Non-forced second call: should NOT be skipped (success=False rows
+    # aren't the cadence cursor).
+    r2 = deliver_digest(db=db, dispatcher=dispatcher, period_hours=24)
+    assert r2.reason != "skipped_too_recent"

@@ -31,6 +31,7 @@ from agent_core.state.models import (
     Obligation,
     ObligationEvent,
     ObligationStatus,
+    RunLog,
     utcnow,
 )
 
@@ -391,4 +392,224 @@ def _render_markdown(d: DailyDigest) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["DailyDigest", "DailyDigestBuilder"]
+# ── Delivery (push the digest through the notification dispatcher) ──────────
+
+
+# Skill name written to RunLog when a digest is delivered. Used as the
+# cadence cursor: max(started_at WHERE skill=this AND success=true) is the
+# "last sent" timestamp.
+DIGEST_DELIVERY_SKILL = "digest-deliver"
+
+
+@dataclass
+class DigestDeliveryReport:
+    """Outcome of one ``deliver_digest()`` call.
+
+    Distinct from ``DispatchResult`` because we have *two* extra reasons
+    a delivery can be skipped that the dispatcher doesn't know about:
+
+      - ``skipped_too_recent``: cadence-gated by ``period_hours`` (we
+        already sent one within the window).
+      - ``skipped_empty``: digest had no content; dropped to keep the
+        noise floor low. Bypass with ``send_when_empty=True``.
+
+    On success, ``digest`` carries the rendered DailyDigest so callers
+    can also stash/print it.
+    """
+
+    sent: bool
+    reason: str  # "sent" | "disabled" | "below_floor" | "transport_failed"
+    #            | "skipped_too_recent" | "skipped_empty"
+    transport: str
+    last_sent_at: datetime | None = None
+    next_eligible_at: datetime | None = None
+    digest: DailyDigest | None = None
+
+
+def _last_digest_delivery(db: Database) -> datetime | None:
+    """Return ``started_at`` of the most recent successful digest delivery,
+    or None if none has ever been sent.
+
+    SQLite stores datetimes as text and SQLAlchemy returns them naive on
+    read; coerce to UTC-aware so callers can compare against ``utcnow()``.
+    """
+    from datetime import UTC
+
+    with db.session() as s:
+        row = s.exec(
+            select(RunLog)
+            .where(RunLog.skill == DIGEST_DELIVERY_SKILL)
+            .where(RunLog.success.is_(True))  # noqa: E712 — sqlmodel idiom
+            .order_by(RunLog.started_at.desc())
+            .limit(1)
+        ).first()
+    if row is None:
+        return None
+    started = row.started_at
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    return started
+
+
+def _has_anything_to_report(d: DailyDigest) -> bool:
+    return bool(
+        d.actions_total
+        or d.closed_obligations
+        or d.open_incidents
+        or d.triage_decisions
+        or d.new_incidents
+    )
+
+
+def deliver_digest(
+    *,
+    db: Database,
+    dispatcher,  # NotificationDispatcher (avoid circular import)
+    builder: "DailyDigestBuilder | None" = None,
+    period_hours: float | None = None,
+    force: bool = False,
+    bypass_floor: bool = False,
+    send_when_empty: bool = False,
+) -> DigestDeliveryReport:
+    """Build a digest, push it via ``dispatcher``, and stamp delivery.
+
+    Cadence-gated by default: if a successful delivery happened within
+    ``period_hours`` of now, returns ``skipped_too_recent`` without
+    building. Pass ``force=True`` to bypass (the CLI ``--send`` flag does).
+
+    ``bypass_floor`` skips the dispatcher's urgency-floor check by calling
+    the underlying transport directly. The CLI ``--send`` path uses this
+    so user-explicit deliveries don't get silently dropped by a strict
+    default floor (``critical``). Periodic-tick delivery should leave it
+    False — the floor is the right knob for "be quiet by default".
+
+    ``send_when_empty`` controls whether to dispatch a digest with no
+    content. Default False so cadenced deliveries don't ping for nothing;
+    CLI ``--send`` flips it on (user asked, give them a reply).
+
+    Records the attempt in RunLog regardless of outcome — successful
+    deliveries set ``success=True`` (and stamp the cadence cursor for
+    future calls); skips/failures set ``success=False`` so they don't
+    poison the cadence.
+    """
+    from agent_core.notifications import Notification, Urgency
+
+    builder = builder or DailyDigestBuilder(db)
+    if period_hours is None:
+        period_hours = builder.period_hours
+
+    # Cadence gate
+    last_sent = _last_digest_delivery(db)
+    next_eligible = (
+        last_sent + timedelta(hours=period_hours) if last_sent else None
+    )
+    now = utcnow()
+    if not force and last_sent is not None and now < next_eligible:  # type: ignore[operator]
+        return DigestDeliveryReport(
+            sent=False,
+            reason="skipped_too_recent",
+            transport=getattr(dispatcher.transport, "name", "?"),
+            last_sent_at=last_sent,
+            next_eligible_at=next_eligible,
+        )
+
+    # Build
+    digest = builder.build()
+
+    # Empty-window guard
+    if not send_when_empty and not _has_anything_to_report(digest):
+        # Stamp as failed so we don't burn the cadence cursor on empty
+        # windows — the next non-empty period will still fire.
+        with db.session() as s:
+            s.add(
+                RunLog(
+                    skill=DIGEST_DELIVERY_SKILL,
+                    trigger="self",
+                    started_at=now,
+                    ended_at=now,
+                    success=False,
+                    summary="empty digest, skipped",
+                )
+            )
+            s.commit()
+        return DigestDeliveryReport(
+            sent=False,
+            reason="skipped_empty",
+            transport=getattr(dispatcher.transport, "name", "?"),
+            last_sent_at=last_sent,
+            next_eligible_at=next_eligible,
+            digest=digest,
+        )
+
+    # Render + dispatch
+    title = f"Daily digest — {digest.instance_name or 'agent-core'}"
+    body = digest.as_markdown()
+    notification = Notification(
+        title=title,
+        body=body,
+        urgency=Urgency.info,
+        tags=["digest"],
+    )
+
+    transport_name = getattr(dispatcher.transport, "name", "?")
+    if bypass_floor:
+        # Skip floor check; honor enabled flag still.
+        if not getattr(dispatcher, "enabled", True):
+            reason = "disabled"
+            ok = False
+        else:
+            ok = dispatcher.transport.send(
+                notification.title,
+                notification.body,
+                priority=int(notification.urgency),
+                tags=notification.tags or None,
+            )
+            reason = "sent" if ok else "transport_failed"
+    else:
+        result = dispatcher.notify(notification)
+        ok = result.delivered
+        reason = result.reason
+        transport_name = result.transport
+
+    # RunLog stamp — success only when delivered, so cadence resets only
+    # on real wins.
+    with db.session() as s:
+        s.add(
+            RunLog(
+                skill=DIGEST_DELIVERY_SKILL,
+                trigger="self",
+                started_at=now,
+                ended_at=utcnow(),
+                success=ok,
+                summary=f"digest delivery: {reason}",
+                metadata_json={
+                    "period_hours": period_hours,
+                    "transport": transport_name,
+                    "force": force,
+                    "bypass_floor": bypass_floor,
+                },
+            )
+        )
+        s.commit()
+
+    new_last_sent = now if ok else last_sent
+    new_next_eligible = (
+        new_last_sent + timedelta(hours=period_hours) if new_last_sent else None
+    )
+    return DigestDeliveryReport(
+        sent=ok,
+        reason=reason,
+        transport=transport_name,
+        last_sent_at=new_last_sent,
+        next_eligible_at=new_next_eligible,
+        digest=digest,
+    )
+
+
+__all__ = [
+    "DIGEST_DELIVERY_SKILL",
+    "DailyDigest",
+    "DailyDigestBuilder",
+    "DigestDeliveryReport",
+    "deliver_digest",
+]

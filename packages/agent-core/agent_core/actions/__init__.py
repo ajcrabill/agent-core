@@ -10,7 +10,13 @@ Modules:
   digest.py    — DailyDigestBuilder: action_log → human-readable summary
 """
 
-from agent_core.actions.digest import DailyDigest, DailyDigestBuilder
+from agent_core.actions.digest import (
+    DIGEST_DELIVERY_SKILL,
+    DailyDigest,
+    DailyDigestBuilder,
+    DigestDeliveryReport,
+    deliver_digest,
+)
 from agent_core.actions.policy import (
     ActionPolicy,
     PolicyDecision,
@@ -19,8 +25,11 @@ from agent_core.actions.policy import (
 
 __all__ = [
     "ActionPolicy",
+    "DIGEST_DELIVERY_SKILL",
     "DailyDigest",
     "DailyDigestBuilder",
+    "DigestDeliveryReport",
     "PolicyDecision",
     "PolicyKind",
+    "deliver_digest",
 ]

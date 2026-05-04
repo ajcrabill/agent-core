@@ -147,7 +147,12 @@ def test_run_tick_sends_notification_for_newly_stalled() -> None:
     dispatcher = NotificationDispatcher(
         transport, enabled=True, urgency_floor=Urgency.info
     )
-    report = run_tick(db=db, settings=AgentSettings(), dispatcher=dispatcher)
+    report = run_tick(
+        db=db,
+        settings=AgentSettings(),
+        dispatcher=dispatcher,
+        digest_delivery_enabled=False,  # focus this test on stalled-notification path
+    )
 
     assert report.notifications_sent == 1
     assert len(transport.calls) == 1
@@ -177,12 +182,17 @@ def test_run_tick_skips_notification_for_already_open_incident() -> None:
     )
     settings = AgentSettings()
 
-    # First tick: notify
-    r1 = run_tick(db=db, settings=settings, dispatcher=dispatcher)
+    # First tick: notify (digest delivery disabled to keep this test focused
+    # on the stalled-notification path)
+    r1 = run_tick(
+        db=db, settings=settings, dispatcher=dispatcher, digest_delivery_enabled=False
+    )
     assert r1.notifications_sent == 1
 
     # Second tick: same obligation still stalled, but no new incident → no notify
-    r2 = run_tick(db=db, settings=settings, dispatcher=dispatcher)
+    r2 = run_tick(
+        db=db, settings=settings, dispatcher=dispatcher, digest_delivery_enabled=False
+    )
     assert r2.notifications_sent == 0
     assert len(transport.calls) == 1  # still just the first
 
@@ -198,7 +208,12 @@ def test_run_tick_severity_critical_for_very_old_stalled() -> None:
     dispatcher = NotificationDispatcher(
         transport, enabled=True, urgency_floor=Urgency.info
     )
-    run_tick(db=db, settings=AgentSettings(), dispatcher=dispatcher)
+    run_tick(
+        db=db,
+        settings=AgentSettings(),
+        dispatcher=dispatcher,
+        digest_delivery_enabled=False,
+    )
     # Critical maps to ntfy priority 5
     assert transport.calls[0]["priority"] == int(Urgency.critical)
 
@@ -214,7 +229,12 @@ def test_run_tick_records_dropped_when_below_floor() -> None:
     dispatcher = NotificationDispatcher(
         NoopTransport(), enabled=True, urgency_floor=Urgency.critical
     )
-    report = run_tick(db=db, settings=AgentSettings(), dispatcher=dispatcher)
+    report = run_tick(
+        db=db,
+        settings=AgentSettings(),
+        dispatcher=dispatcher,
+        digest_delivery_enabled=False,
+    )
     # 30h is below 168h → warn urgency → below critical floor → dropped
     assert report.notifications_sent == 0
     assert report.notifications_dropped == 1
@@ -500,3 +520,94 @@ def test_run_tick_triage_disabled_skips_step() -> None:
         triage_enabled=False,
     )
     assert report.triage is None
+
+
+# ── Sprint 20: digest delivery wiring ──────────────────────────────────────
+
+
+def test_run_tick_attempts_digest_delivery_when_dispatcher_present():
+    """A tick with non-empty content should fire the digest path."""
+    db = _db()
+    with db.session() as s:
+        s.add(_stalled_obligation(hours_old=30))
+        s.commit()
+
+    transport = _RecordingTransport()
+    dispatcher = NotificationDispatcher(
+        transport, enabled=True, urgency_floor=Urgency.info
+    )
+    report = run_tick(db=db, settings=AgentSettings(), dispatcher=dispatcher)
+
+    assert report.digest_delivery_attempted
+    assert report.digest_delivery_sent
+    assert report.digest_delivery_reason == "sent"
+    # Two transport calls: stalled-notification + digest
+    titles = [c["title"] for c in transport.calls]
+    assert any("Stalled" in t for t in titles)
+    assert any("Daily digest" in t for t in titles)
+
+
+def test_run_tick_digest_delivery_disabled_skips_path():
+    db = _db()
+    with db.session() as s:
+        s.add(_stalled_obligation(hours_old=30))
+        s.commit()
+    transport = _RecordingTransport()
+    dispatcher = NotificationDispatcher(
+        transport, enabled=True, urgency_floor=Urgency.info
+    )
+    report = run_tick(
+        db=db,
+        settings=AgentSettings(),
+        dispatcher=dispatcher,
+        digest_delivery_enabled=False,
+    )
+    assert not report.digest_delivery_attempted
+    assert report.digest_delivery_reason is None
+
+
+def test_run_tick_digest_skipped_when_dispatcher_none():
+    db = _db()
+    with db.session() as s:
+        s.add(_stalled_obligation(hours_old=30))
+        s.commit()
+    report = run_tick(db=db, settings=AgentSettings(), dispatcher=None)
+    assert not report.digest_delivery_attempted
+
+
+def test_run_tick_second_tick_cadence_gates_digest():
+    """First tick fires digest; second within period should be too-recent."""
+    db = _db()
+    with db.session() as s:
+        s.add(_stalled_obligation(hours_old=30))
+        s.commit()
+
+    transport = _RecordingTransport()
+    dispatcher = NotificationDispatcher(
+        transport, enabled=True, urgency_floor=Urgency.info
+    )
+    settings = AgentSettings()
+
+    r1 = run_tick(db=db, settings=settings, dispatcher=dispatcher)
+    assert r1.digest_delivery_sent
+
+    r2 = run_tick(db=db, settings=settings, dispatcher=dispatcher)
+    assert not r2.digest_delivery_sent
+    assert r2.digest_delivery_reason == "skipped_too_recent"
+    # Only one digest in transport calls (plus the first stalled-notification;
+    # second tick is silent because incident already open).
+    digest_calls = [c for c in transport.calls if "Daily digest" in c["title"]]
+    assert len(digest_calls) == 1
+
+
+def test_run_tick_digest_skipped_empty_when_no_activity():
+    """Empty db → digest delivery returns skipped_empty."""
+    db = _db()
+    transport = _RecordingTransport()
+    dispatcher = NotificationDispatcher(
+        transport, enabled=True, urgency_floor=Urgency.info
+    )
+    report = run_tick(db=db, settings=AgentSettings(), dispatcher=dispatcher)
+    assert report.digest_delivery_attempted
+    assert not report.digest_delivery_sent
+    assert report.digest_delivery_reason == "skipped_empty"

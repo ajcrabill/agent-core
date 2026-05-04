@@ -378,7 +378,39 @@ def run(config_path, db_url, interval, once):
     is_flag=True,
     help="Emit the raw DailyDigest dataclass as JSON instead of markdown.",
 )
-def digest(config_path, db_url, hours, as_json):
+@click.option(
+    "--send",
+    is_flag=True,
+    help=(
+        "Push the digest through the notification dispatcher (ntfy/etc) "
+        "in addition to printing it. Bypasses the urgency floor — explicit user "
+        "intent always reaches the transport."
+    ),
+)
+@click.option(
+    "--respect-cadence",
+    is_flag=True,
+    help=(
+        "With --send, skip if a digest was already delivered within the "
+        "period window. Useful when wired into cron/launchd. Default is "
+        "force-send for explicit CLI calls."
+    ),
+)
+@click.option(
+    "--respect-floor",
+    is_flag=True,
+    help=(
+        "With --send, honor settings.notifications.urgency_floor. Default "
+        "is to bypass it (explicit CLI call = the user wants it). Useful "
+        "when this is wired into cron and you want one knob in settings."
+    ),
+)
+@click.option(
+    "--send-when-empty",
+    is_flag=True,
+    help="With --send, deliver even when the digest has no content.",
+)
+def digest(config_path, db_url, hours, as_json, send, respect_cadence, respect_floor, send_when_empty):
     """Render a daily digest of what the agent has been up to.
 
     Aggregates the past 24h (or --hours) of:
@@ -415,6 +447,52 @@ def digest(config_path, db_url, hours, as_json):
         builder = DailyDigestBuilder(db, period_hours=hours)
     else:
         builder = DailyDigestBuilder.from_settings(mgr.settings, db)
+
+    if send:
+        from agent_core.actions.digest import deliver_digest
+        from agent_core.notifications import NotificationDispatcher
+
+        try:
+            dispatcher = NotificationDispatcher.from_settings(mgr.settings)
+        except Exception as e:
+            console.print(f"[red]notifications not configured:[/red] {e}")
+            console.print(
+                "[dim]Hint: `dcos settings set notifications.transport=ntfy "
+                "notifications.ntfy_topic=<your-private-topic> "
+                "notifications.enabled=true`.[/dim]"
+            )
+            raise click.exceptions.Exit(1) from e
+
+        report = deliver_digest(
+            db=db,
+            dispatcher=dispatcher,
+            builder=builder,
+            force=not respect_cadence,
+            bypass_floor=not respect_floor,
+            send_when_empty=send_when_empty,
+        )
+        emoji = "[green]✓[/green]" if report.sent else "[yellow]∅[/yellow]"
+        console.print(
+            f"{emoji} digest delivery: {report.reason} "
+            f"(transport={report.transport})"
+        )
+        if report.last_sent_at:
+            console.print(f"[dim]last sent: {report.last_sent_at.isoformat()}[/dim]")
+        if not report.sent and report.next_eligible_at:
+            console.print(
+                f"[dim]next eligible: {report.next_eligible_at.isoformat()}"
+                " (use --force or wait)[/dim]"
+            )
+        # Also print the rendered digest unless we were JSON-mode (caller
+        # presumably wants machine output and the dispatcher already pushed
+        # it to the human side).
+        d = report.digest or builder.build()
+        if as_json:
+            click.echo(_json.dumps(asdict(d), default=str, indent=2, sort_keys=True))
+        else:
+            click.echo()
+            click.echo(d.as_markdown())
+        return
 
     d = builder.build()
 

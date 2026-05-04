@@ -29,6 +29,7 @@ from agent_core.state.models import (
     Incident,
     IncidentStatus,
     Obligation,
+    ObligationEvent,
     ObligationStatus,
     utcnow,
 )
@@ -55,6 +56,12 @@ class DailyDigest:
     failed_actions: list[dict] = field(default_factory=list)
     notable_external: list[dict] = field(default_factory=list)
     open_incidents: list[dict] = field(default_factory=list)
+
+    # Autonomous-tick activity (sprints 16/17): triage decisions made by the
+    # agent + incidents opened by stalled-detection in this window.
+    triage_decisions: list[dict] = field(default_factory=list)
+    triage_by_action: dict[str, int] = field(default_factory=dict)
+    new_incidents: list[dict] = field(default_factory=list)
 
     # External action classes worth highlighting (touched the outside world)
     EXTERNAL_CLASSES = (
@@ -121,6 +128,42 @@ class DailyDigestBuilder:
                     )
                 ).all()
             )
+
+            # Triage decisions in window — ObligationEvent rows from the
+            # autonomous tick's email-triage step (Sprint 17).
+            triage_events = list(
+                s.exec(
+                    select(ObligationEvent)
+                    .where(ObligationEvent.actor == "agent-triage")
+                    .where(ObligationEvent.kind == "comment")
+                    .where(ObligationEvent.occurred_at >= start)
+                    .where(ObligationEvent.occurred_at <= end)
+                    .order_by(ObligationEvent.occurred_at.asc())
+                ).all()
+            )
+
+            # Incidents newly opened in this window (stalled-detection from
+            # Sprint 16 records these).
+            new_incs = list(
+                s.exec(
+                    select(Incident)
+                    .where(Incident.occurred_at >= start)
+                    .where(Incident.occurred_at <= end)
+                    .order_by(Incident.occurred_at.asc())
+                ).all()
+            )
+
+            # Joined obligation titles for triage decisions (so the digest
+            # reads "draft: Email from boss@..." not "draft: ob 4d37ec4b").
+            triage_ob_ids = [e.obligation_id for e in triage_events]
+            triage_obs: dict[str, Obligation] = {}
+            if triage_ob_ids:
+                rows = list(
+                    s.exec(
+                        select(Obligation).where(Obligation.id.in_(triage_ob_ids))
+                    ).all()
+                )
+                triage_obs = {ob.id: ob for ob in rows}
 
         digest = DailyDigest(
             period_start=start,
@@ -190,6 +233,40 @@ class DailyDigestBuilder:
                 }
             )
 
+        # Triage decisions (Sprint 17 autonomous tick)
+        triage_action_counter: Counter[str] = Counter()
+        for e in triage_events:
+            payload = e.payload or {}
+            action = payload.get("action", "?")
+            ob = triage_obs.get(e.obligation_id) if e.obligation_id else None
+            digest.triage_decisions.append(
+                {
+                    "occurred_at": e.occurred_at,
+                    "obligation_id": e.obligation_id,
+                    "obligation_title": ob.title if ob else None,
+                    "action": action,
+                    "confidence": payload.get("confidence"),
+                    "reasoning": payload.get("reasoning"),
+                    "status_changed": payload.get("status_changed", False),
+                }
+            )
+            triage_action_counter[action] += 1
+        digest.triage_by_action = dict(triage_action_counter)
+
+        # Newly opened incidents in window (Sprint 16 stalled-detection)
+        for i in new_incs:
+            digest.new_incidents.append(
+                {
+                    "id": i.id,
+                    "title": i.title,
+                    "severity": i.severity.value,
+                    "status": i.status.value,
+                    "source": i.source,
+                    "obligation_id": i.related_obligation_id,
+                    "occurred_at": i.occurred_at,
+                }
+            )
+
         return digest
 
 
@@ -213,6 +290,40 @@ def _render_markdown(d: DailyDigest) -> str:
         f"{d.actions_deferred} deferred"
     )
     lines.append("")
+
+    # Triage activity (autonomous tick — Sprint 17)
+    if d.triage_decisions:
+        lines.append(f"## Auto-triage decisions ({len(d.triage_decisions)})")
+        lines.append("")
+        if d.triage_by_action:
+            summary = ", ".join(
+                f"{count} {action}" for action, count in sorted(d.triage_by_action.items())
+            )
+            lines.append(f"_{summary}_")
+            lines.append("")
+        for t in d.triage_decisions:
+            title = t["obligation_title"] or f"obligation {(t['obligation_id'] or '?')[:8]}"
+            conf = t.get("confidence")
+            conf_str = f" (confidence={conf:.2f})" if isinstance(conf, (int, float)) else ""
+            arrow = " → status changed" if t.get("status_changed") else ""
+            reasoning = t.get("reasoning") or ""
+            line = f"- **{t['action']}**{conf_str}{arrow}: {title}"
+            if reasoning:
+                snippet = reasoning[:120].replace("\n", " ")
+                line += f" — _{snippet}_"
+            lines.append(line)
+        lines.append("")
+
+    # Newly opened incidents (stalled-detection — Sprint 16)
+    if d.new_incidents:
+        lines.append(f"## Newly opened incidents ({len(d.new_incidents)})")
+        lines.append("")
+        for i in d.new_incidents:
+            src = f" `source:{i['source']}`" if i.get("source") else ""
+            lines.append(
+                f"- **{i['title']}** _{i['severity']}_{src} `id:{i['id'][:8]}`"
+            )
+        lines.append("")
 
     # Closures
     if d.closed_obligations:
@@ -267,7 +378,13 @@ def _render_markdown(d: DailyDigest) -> str:
             )
         lines.append("")
 
-    if d.actions_total == 0 and not d.closed_obligations and not d.open_incidents:
+    if (
+        d.actions_total == 0
+        and not d.closed_obligations
+        and not d.open_incidents
+        and not d.triage_decisions
+        and not d.new_incidents
+    ):
         lines.append("_Nothing to report — no actions in this window._")
         lines.append("")
 

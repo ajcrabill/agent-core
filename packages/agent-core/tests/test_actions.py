@@ -18,6 +18,8 @@ from agent_core.state import (
     Incident,
     IncidentSeverity,
     Obligation,
+    ObligationEvent,
+    ObligationEventKind,
     ObligationStatus,
     utcnow,
 )
@@ -399,3 +401,189 @@ def test_digest_markdown_renders_all_sections() -> None:
         "Stale token",
     ):
         assert needle in md, f"missing in digest: {needle!r}"
+
+
+# ── Sprint 18: triage + new-incident sections ───────────────────────────────
+
+
+def test_digest_includes_triage_decisions() -> None:
+    db = _empty_db()
+    with db.session() as s:
+        ob = Obligation(title="Email from boss@example.com: Q2 review")
+        s.add(ob)
+        s.commit()
+        ob_id = ob.id
+        s.add(
+            ObligationEvent(
+                obligation_id=ob_id,
+                kind=ObligationEventKind.comment,
+                actor="agent-triage",
+                payload={
+                    "type": "triage",
+                    "action": "draft",
+                    "confidence": 0.91,
+                    "reasoning": "boss waiting on signoff",
+                    "status_changed": True,
+                },
+            )
+        )
+        s.commit()
+
+    digest = DailyDigestBuilder(db).build()
+    assert len(digest.triage_decisions) == 1
+    t = digest.triage_decisions[0]
+    assert t["action"] == "draft"
+    assert t["confidence"] == 0.91
+    assert t["status_changed"] is True
+    assert t["obligation_title"] == "Email from boss@example.com: Q2 review"
+    assert digest.triage_by_action == {"draft": 1}
+
+
+def test_digest_excludes_triage_outside_window() -> None:
+    db = _empty_db()
+    with db.session() as s:
+        ob = Obligation(title="t")
+        s.add(ob)
+        s.commit()
+        ob_id = ob.id
+        s.add(
+            ObligationEvent(
+                obligation_id=ob_id,
+                kind=ObligationEventKind.comment,
+                actor="agent-triage",
+                payload={"action": "archive"},
+                occurred_at=utcnow() - timedelta(days=10),
+            )
+        )
+        s.commit()
+    digest = DailyDigestBuilder(db).build()
+    assert digest.triage_decisions == []
+
+
+def test_digest_ignores_non_triage_obligation_events() -> None:
+    """A status_changed event from agent-triage shouldn't double-count
+    against the comment-kind triage decision row."""
+    db = _empty_db()
+    with db.session() as s:
+        ob = Obligation(title="t")
+        s.add(ob)
+        s.commit()
+        ob_id = ob.id
+        # status_changed (NOT a triage decision row by our convention)
+        s.add(
+            ObligationEvent(
+                obligation_id=ob_id,
+                kind=ObligationEventKind.status_changed,
+                actor="agent-triage",
+                payload={"from": "inbox", "to": "done"},
+            )
+        )
+        # Comment from a non-triage actor — should also be excluded.
+        s.add(
+            ObligationEvent(
+                obligation_id=ob_id,
+                kind=ObligationEventKind.comment,
+                actor="user",
+                payload={"note": "nothx"},
+            )
+        )
+        s.commit()
+    digest = DailyDigestBuilder(db).build()
+    assert digest.triage_decisions == []
+
+
+def test_digest_includes_newly_opened_incidents() -> None:
+    db = _empty_db()
+    with db.session() as s:
+        s.add(
+            Incident(
+                title="Stalled obligation: ship Q2 report",
+                severity=IncidentSeverity.medium,
+                source="stalled-detection",
+            )
+        )
+        s.commit()
+    digest = DailyDigestBuilder(db).build()
+    assert len(digest.new_incidents) == 1
+    assert digest.new_incidents[0]["source"] == "stalled-detection"
+    # The same row is also an open incident (carry-over):
+    assert len(digest.open_incidents) == 1
+
+
+def test_digest_excludes_old_incidents_from_new_list() -> None:
+    db = _empty_db()
+    with db.session() as s:
+        s.add(
+            Incident(
+                title="last week's stall",
+                severity=IncidentSeverity.medium,
+                occurred_at=utcnow() - timedelta(days=8),
+            )
+        )
+        s.commit()
+    digest = DailyDigestBuilder(db).build()
+    assert digest.new_incidents == []
+    # But still surfaces as an open incident (status remains open):
+    assert len(digest.open_incidents) == 1
+
+
+def test_digest_markdown_renders_triage_and_new_incident_sections() -> None:
+    db = _empty_db()
+    with db.session() as s:
+        ob = Obligation(title="Email from x@example.com: hello")
+        s.add(ob)
+        s.commit()
+        ob_id = ob.id
+        s.add(
+            ObligationEvent(
+                obligation_id=ob_id,
+                kind=ObligationEventKind.comment,
+                actor="agent-triage",
+                payload={
+                    "action": "archive",
+                    "confidence": 0.97,
+                    "reasoning": "newsletter",
+                    "status_changed": True,
+                },
+            )
+        )
+        s.add(
+            Incident(
+                title="ship Q2 stalled",
+                severity=IncidentSeverity.medium,
+                source="stalled-detection",
+            )
+        )
+        s.commit()
+    md = DailyDigestBuilder(db).build().as_markdown()
+    for needle in (
+        "Auto-triage decisions",
+        "archive",
+        "newsletter",
+        "Newly opened incidents",
+        "ship Q2 stalled",
+        "stalled-detection",
+    ):
+        assert needle in md, f"missing: {needle!r}"
+
+
+def test_digest_not_empty_when_only_triage_activity() -> None:
+    """If the only thing that happened in the window is auto-triage, the
+    'nothing to report' line should NOT appear."""
+    db = _empty_db()
+    with db.session() as s:
+        ob = Obligation(title="Email from a@b: hi")
+        s.add(ob)
+        s.commit()
+        s.add(
+            ObligationEvent(
+                obligation_id=ob.id,
+                kind=ObligationEventKind.comment,
+                actor="agent-triage",
+                payload={"action": "draft", "confidence": 0.9, "status_changed": True},
+            )
+        )
+        s.commit()
+    md = DailyDigestBuilder(db).build().as_markdown()
+    assert "Nothing to report" not in md
+    assert "Auto-triage decisions" in md

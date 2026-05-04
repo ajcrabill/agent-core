@@ -355,6 +355,77 @@ def run(config_path, db_url, interval, once):
         console.print(f"[dim]ran {tick_count} ticks. bye.[/dim]")
 
 
+@cli.command(name="digest")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+)
+@click.option(
+    "--hours",
+    type=float,
+    default=None,
+    help="Window size in hours. Defaults to settings.notifications.digest_period_hours (24).",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit the raw DailyDigest dataclass as JSON instead of markdown.",
+)
+def digest(config_path, db_url, hours, as_json):
+    """Render a daily digest of what the agent has been up to.
+
+    Aggregates the past 24h (or --hours) of:
+
+    \b
+      - Closed obligations
+      - Auto-triage decisions (Sprint 17: dcos run)
+      - Newly opened incidents (Sprint 16: stalled detection)
+      - Failed actions
+      - External-facing actions (email sends, publishes)
+      - Open carry-over incidents
+
+    Run after a long `dcos run` session to see what happened, or wire
+    into cron/launchd to email yourself a morning summary.
+    """
+    import json as _json
+    from dataclasses import asdict
+
+    from agent_core.actions.digest import DailyDigestBuilder
+    from agent_core.settings import SettingsManager
+    from agent_core.state.db import Database
+
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    if not db_url:
+        db_url = mgr.get("storage.url")
+    db = Database(db_url)
+
+    if hours is not None:
+        builder = DailyDigestBuilder(db, period_hours=hours)
+    else:
+        builder = DailyDigestBuilder.from_settings(mgr.settings, db)
+
+    d = builder.build()
+
+    if as_json:
+        # Datetimes need stringifying for JSON.
+        click.echo(_json.dumps(asdict(d), default=str, indent=2, sort_keys=True))
+        return
+
+    click.echo(d.as_markdown())
+
+
 @cli.command(name="remember")
 @click.argument("content", nargs=-1)
 @click.option(

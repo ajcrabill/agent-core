@@ -92,23 +92,15 @@ say "agent-core bootstrap"
 note "product=${PRODUCT}  repo=${REPO_ROOT}"
 echo
 
-# Python 3.11+ — needed for typing features
-PYTHON_VERSION="$(python3 --version 2>&1 | awk '{print $2}')" || PYTHON_VERSION=""
-if [ -z "$PYTHON_VERSION" ]; then
-    fail "python3 not found. install Python 3.11+ first."
-fi
-PY_MAJOR="$(echo "$PYTHON_VERSION" | cut -d. -f1)"
-PY_MINOR="$(echo "$PYTHON_VERSION" | cut -d. -f2)"
-if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 11 ]; }; then
-    fail "python ${PYTHON_VERSION} too old; need 3.11+. install with: brew install python@3.12 (mac) or apt install python3.11 (Debian)"
-fi
-ok "python ${PYTHON_VERSION}"
-
-# uv
+# uv — installed first because it can manage Python itself.
 if ! command -v uv >/dev/null 2>&1; then
     if [ -x "$HOME/.local/bin/uv" ]; then
         export PATH="$HOME/.local/bin:$PATH"
         ok "found uv at \$HOME/.local/bin/uv (added to PATH for this run)"
+    elif [ -x "/opt/homebrew/bin/uv" ]; then
+        # Apple Silicon brew prefix isn't always on the SSH non-login PATH.
+        export PATH="/opt/homebrew/bin:$PATH"
+        ok "found uv at /opt/homebrew/bin/uv (added to PATH for this run)"
     else
         say "installing uv (one-time)…"
         if ! curl -LsSf https://astral.sh/uv/install.sh | sh; then
@@ -119,6 +111,23 @@ if ! command -v uv >/dev/null 2>&1; then
     fi
 else
     ok "uv $(uv --version 2>&1 | awk '{print $2}')"
+fi
+
+# Python 3.11+ — soft check. uv manages its own Python automatically:
+# if the system python3 is too old (or missing), `uv sync` downloads a
+# compatible interpreter into ~/.local/share/uv/python/. So we just note
+# the situation rather than failing.
+PYTHON_VERSION="$(python3 --version 2>&1 | awk '{print $2}')" || PYTHON_VERSION=""
+if [ -z "$PYTHON_VERSION" ]; then
+    note "python3 not on PATH — uv will download a managed Python interpreter"
+else
+    PY_MAJOR="$(echo "$PYTHON_VERSION" | cut -d. -f1)"
+    PY_MINOR="$(echo "$PYTHON_VERSION" | cut -d. -f2)"
+    if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 11 ]; }; then
+        note "system python ${PYTHON_VERSION} is too old (need 3.11+); uv will download a managed Python"
+    else
+        ok "python ${PYTHON_VERSION} (system)"
+    fi
 fi
 
 # git submodule (OpenWebUI fork) — needed for `git submodule update`

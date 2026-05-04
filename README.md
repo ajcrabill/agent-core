@@ -47,15 +47,18 @@ This is a multi-sprint build. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Quickstart
 
-The interactive setup wizard is the primary install path. Once published:
+Two commands from clone to chatting:
 
 ```bash
-pipx install dcos-agent       # personal
-pipx install ikb-agent        # team
-agent-core init               # 3-tier interview wizard, 5-60 min
+git clone https://github.com/ajcrabill/agent-core.git && cd agent-core
+./bootstrap.sh
 ```
 
-For now, see [docs/QUICKSTART.md](docs/QUICKSTART.md) for current state.
+`bootstrap.sh` detects what's missing (Python, uv, submodules), walks you through LLM provider choice (OpenAI / local Ollama / stub), runs the wizard, generates an API token, and drops you into `dcos chat`.
+
+For ikb-agent instead: `./bootstrap.sh --product ikb`.
+
+Full details + manual install: [docs/QUICKSTART.md](docs/QUICKSTART.md).
 
 ## Repository layout
 

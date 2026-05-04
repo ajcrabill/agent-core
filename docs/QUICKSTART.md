@@ -1,15 +1,32 @@
 # Quickstart
 
-Three commands to a running agent. Tested on macOS 14+ with Python 3.11.
-
-## Prereqs (one-time)
+**Two commands to a chatting agent.** Tested on macOS 14+ and Ubuntu/Debian Linux.
 
 ```bash
-brew install uv git
-# Optional: brew install node                                     # for OpenWebUI ObligationBoard plugin
-# Optional: brew install ollama && ollama pull nomic-embed-text   # for OpenBrain semantic search
-# Optional (ikb-agent only): brew install postgresql@16 && brew services start postgresql@16
+git clone https://github.com/ajcrabill/agent-core.git && cd agent-core
+./bootstrap.sh
 ```
+
+`bootstrap.sh` handles everything: detects/installs `uv`, runs `uv sync`, walks you through LLM provider choice (OpenAI / local Ollama / stub), writes settings, bootstraps the schema, generates an API token, runs doctor, and drops you into `dcos chat`.
+
+Need ikb-agent instead?
+```bash
+./bootstrap.sh --product ikb
+```
+
+## What if you already have prereqs?
+
+`bootstrap.sh` checks for and (where possible) installs:
+
+- **Python 3.11+** — must be present already
+- **uv** — auto-installs from astral.sh if missing
+- **git** — must be present (you cloned with it)
+- **submodules** — auto-fetches the OpenWebUI fork
+
+Optional but recommended:
+- `brew install ollama && ollama pull nomic-embed-text` for OpenBrain semantic search
+- `brew install postgresql@16 && brew services start postgresql@16` if you'll use ikb-agent
+- `brew install node` only if you want the OpenWebUI ObligationBoard plugin (separate setup)
 
 If you're on a fresh macOS user account without Homebrew:
 ```bash
@@ -17,7 +34,7 @@ If you're on a fresh macOS user account without Homebrew:
 eval "$(/opt/homebrew/bin/brew shellenv)" && echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
 ```
 
-## Install
+## Manual install (if you don't want to run a script)
 
 ```bash
 git clone https://github.com/ajcrabill/agent-core.git

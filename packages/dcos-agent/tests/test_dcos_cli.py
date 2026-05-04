@@ -146,6 +146,113 @@ def test_setup_no_init_skips_chained_steps(monkeypatch, tmp_path: Path) -> None:
     assert "agent doctor" not in result.output
 
 
+# ── Sprint 19: chat slash-command helpers ──────────────────────────────────
+
+
+def test_capture_inline_email_form_creates_inbound_email_obligation():
+    from agent_core.state.db import Database
+    from agent_core.state.models import (
+        Obligation,
+        ObligationSource,
+        ObligationStatus,
+    )
+    from sqlmodel import select
+
+    from dcos_agent.cli import _capture_inline
+
+    db = Database.sqlite_memory()
+    db.create_all()
+    raw = "Email from boss@example.com: Q2 sign-off\nBody line 1\nBody line 2"
+    ob_id = _capture_inline(db=db, raw=raw)
+
+    with db.session() as s:
+        ob = s.exec(select(Obligation).where(Obligation.id == ob_id)).one()
+        assert ob.source == ObligationSource.inbound_email
+        assert ob.status == ObligationStatus.inbox
+        assert ob.title == "Email from boss@example.com: Q2 sign-off"
+        assert "Body line 1" in (ob.body or "")
+
+
+def test_capture_inline_plain_text_creates_manual_obligation():
+    from agent_core.state.db import Database
+    from agent_core.state.models import (
+        Obligation,
+        ObligationSource,
+        ObligationStatus,
+    )
+    from sqlmodel import select
+
+    from dcos_agent.cli import _capture_inline
+
+    db = Database.sqlite_memory()
+    db.create_all()
+    ob_id = _capture_inline(db=db, raw="follow up with charlotte tomorrow")
+
+    with db.session() as s:
+        ob = s.exec(select(Obligation).where(Obligation.id == ob_id)).one()
+        assert ob.source == ObligationSource.manual
+        assert ob.status == ObligationStatus.inbox
+        assert ob.title == "follow up with charlotte tomorrow"
+
+
+def test_run_triage_inline_classifies_inbox_email_obligation(capsys):
+    """End-to-end: /capture + /triage in one shot. The captured email
+    obligation should get auto-triaged via the inline helper."""
+    import json
+
+    from agent_core.settings import SettingsManager
+    from agent_core.skills import StubLanguageModel
+    from agent_core.state.db import Database
+    from agent_core.state.models import Obligation, ObligationStatus
+    from sqlmodel import select
+
+    from dcos_agent.cli import _capture_inline, _run_triage_inline
+
+    db = Database.sqlite_memory()
+    db.create_all()
+    settings = SettingsManager()
+    lm = StubLanguageModel(default=json.dumps({
+        "action": "draft",
+        "score": 0.95,
+        "reasoning": "looks important",
+    }))
+
+    _capture_inline(db=db, raw="Email from x@y.com: hello\nplease respond")
+    _run_triage_inline(db=db, settings=settings, language_model=lm)
+
+    with db.session() as s:
+        ob = s.exec(select(Obligation)).one()
+        # 'draft' action moves status to in_progress
+        assert ob.status == ObligationStatus.in_progress
+
+    out = capsys.readouterr().out
+    assert "1 candidates" in out
+    assert "1 classified" in out
+
+
+def test_show_digest_inline_renders_markdown(capsys):
+    from agent_core.state.db import Database
+    from agent_core.state.models import Obligation, ObligationStatus, utcnow
+    from dcos_agent.cli import _show_digest_inline
+
+    db = Database.sqlite_memory()
+    db.create_all()
+    with db.session() as s:
+        s.add(
+            Obligation(
+                title="closed thing",
+                status=ObligationStatus.done,
+                completed_at=utcnow(),
+            )
+        )
+        s.commit()
+
+    _show_digest_inline(db=db, hours=24)
+    out = capsys.readouterr().out
+    assert "Daily digest" in out
+    assert "closed thing" in out
+
+
 # ── Re-exports from agent-core ─────────────────────────────────────────────
 
 

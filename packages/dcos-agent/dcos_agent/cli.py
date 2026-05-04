@@ -685,7 +685,8 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
 
     console.print(f"[dim]chatting with {provider_label}. Ctrl-D or /exit to quit.[/dim]")
     console.print(
-        "[dim]Slash commands: /reset (clear history), /context (toggle injection), /exit.[/dim]"
+        "[dim]Slash commands: /help, /reset, /context, /triage, /run, /digest, "
+        "/capture, /exit.[/dim]"
     )
     console.print()
 
@@ -701,6 +702,20 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
         if text in ("/exit", "/quit"):
             console.print("[dim]bye[/dim]")
             break
+        if text in ("/help", "/?"):
+            console.print(
+                "[dim]"
+                "/help          show this list\n"
+                "/reset         clear chat history (keeps system prompt)\n"
+                "/context       toggle obligation + openbrain injection\n"
+                "/triage        run inbox auto-triage now (dcos run --once, triage only)\n"
+                "/run           run a single autonomous tick (stalled detection + triage)\n"
+                "/digest [hrs]  show recent agent activity (default 24h)\n"
+                "/capture <text> add an inbox obligation; next /triage will classify it\n"
+                "/exit          quit"
+                "[/dim]"
+            )
+            continue
         if text == "/reset":
             session.reset()
             console.print("[dim]history cleared[/dim]")
@@ -710,6 +725,31 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
             session.inject_openbrain = not session.inject_openbrain
             state = "ON" if session.inject_obligations else "OFF"
             console.print(f"[dim]context injection: {state}[/dim]")
+            continue
+        if text == "/triage":
+            _run_triage_inline(db=db, settings=mgr, language_model=lm)
+            continue
+        if text == "/run":
+            _run_tick_inline(db=db, settings=mgr, language_model=lm)
+            continue
+        if text.startswith("/digest"):
+            parts = text.split(maxsplit=1)
+            try:
+                hours = float(parts[1]) if len(parts) > 1 else 24.0
+            except ValueError:
+                console.print(f"[yellow]/digest expects a number of hours, got {parts[1]!r}[/yellow]")
+                continue
+            _show_digest_inline(db=db, hours=hours)
+            continue
+        if text.startswith("/capture"):
+            payload = text[len("/capture") :].strip()
+            if not payload:
+                console.print(
+                    "[yellow]usage: /capture Email from x@y.com: subject\\nbody…[/yellow]"
+                )
+                continue
+            ob_id = _capture_inline(db=db, raw=payload)
+            console.print(f"[dim]captured obligation {ob_id[:8]} — try /triage to classify[/dim]")
             continue
         if text.startswith("/"):
             console.print(f"[yellow]unknown command:[/yellow] {text}")
@@ -953,6 +993,102 @@ def skills_run(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
+
+
+def _run_triage_inline(*, db, settings, language_model) -> None:
+    """Run triage_inbox and print a one-line summary to the chat console."""
+    from agent_core.agent.run_loop import triage_inbox
+    import dcos_agent.skills  # noqa: F401  ensures email-triage is registered
+
+    if db is None:
+        console.print("[yellow]/triage requires a database; aborting.[/yellow]")
+        return
+    report = triage_inbox(db=db, settings=settings, language_model=language_model)
+    if report.errors:
+        for err in report.errors:
+            console.print(f"[red]triage error:[/red] {err}")
+    by_action = ", ".join(f"{n} {a}" for a, n in sorted(report.by_action.items())) or "none"
+    console.print(
+        f"[dim]triage: {report.candidates} candidates, {report.triaged} classified "
+        f"({by_action}), {report.skipped_already_triaged} already triaged.[/dim]"
+    )
+
+
+def _run_tick_inline(*, db, settings, language_model) -> None:
+    """Run a single autonomous tick (run_tick) and print summary."""
+    from agent_core.agent.run_loop import run_tick
+    from agent_core.notifications import NotificationDispatcher
+    import dcos_agent.skills  # noqa: F401
+
+    if db is None:
+        console.print("[yellow]/run requires a database; aborting.[/yellow]")
+        return
+    try:
+        dispatcher = NotificationDispatcher.from_settings(settings.settings)
+    except Exception:
+        dispatcher = None
+    report = run_tick(
+        db=db,
+        settings=settings,
+        dispatcher=dispatcher,
+        language_model=language_model,
+    )
+    triage = report.triage
+    console.print(
+        f"[dim]tick: {report.stalled_count} stalled, "
+        f"{report.new_incidents} new incidents, "
+        f"{report.notifications_sent} notifications sent. "
+        f"triage: {triage.candidates} candidates, {triage.triaged} classified."
+        f"[/dim]"
+    )
+    for err in report.errors:
+        console.print(f"[red]tick error:[/red] {err}")
+
+
+def _show_digest_inline(*, db, hours: float) -> None:
+    from agent_core.actions.digest import DailyDigestBuilder
+
+    if db is None:
+        console.print("[yellow]/digest requires a database; aborting.[/yellow]")
+        return
+    digest = DailyDigestBuilder(db, period_hours=hours).build()
+    console.print(digest.as_markdown())
+
+
+def _capture_inline(*, db, raw: str) -> str:
+    """Add an inbox obligation from a raw chat-typed payload.
+
+    Heuristic: if the first line looks like ``Email from <addr>: <subject>``,
+    treat it as an inbound-email obligation (so /triage will pick it up).
+    Otherwise, treat as a generic manual obligation.
+    """
+    from agent_core.state.models import (
+        Obligation,
+        ObligationSource,
+        ObligationStatus,
+    )
+
+    lines = raw.split("\n", 1)
+    head = lines[0].strip()
+    body = lines[1].strip() if len(lines) > 1 else ""
+
+    if head.lower().startswith("email from "):
+        title = head
+        source = ObligationSource.inbound_email
+    else:
+        title = head[:200]
+        source = ObligationSource.manual
+
+    with db.session() as s:
+        ob = Obligation(
+            title=title,
+            body=body or None,
+            source=source,
+            status=ObligationStatus.inbox,
+        )
+        s.add(ob)
+        s.commit()
+        return ob.id
 
 
 def _smart_stub_lm():

@@ -699,6 +699,68 @@ class EmailSettings(BaseModel):
     )
 
 
+# ── Calendar ────────────────────────────────────────────────────────────────
+
+
+class CalendarSettings(BaseModel):
+    """Read-only ICS calendar integration.
+
+    Source = a "secret address in iCal format" URL. Supported by Google
+    Calendar, iCloud, Fastmail, and any standard CalDAV-style provider.
+    The URL itself is the secret (anyone with it can read your calendar);
+    stash it in the secrets store, not in agent.yml.
+
+    Set up:
+      1. Get the secret ICS URL from your calendar provider's settings.
+         Google Cal: Settings → Integrate calendar → 'Secret address in iCal format'.
+      2. dcos secrets set calendar.ics_url=<the-https-url>
+      3. dcos settings set calendar.enabled=true
+      4. dcos calendar today
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=False,
+        description="Master switch. While False, no fetch ever runs.",
+    )
+    ics_url_secret_key: str = Field(
+        default="ics_url",
+        description=(
+            "Key under secrets namespace 'calendar' that holds the ICS feed URL. "
+            "The full URL is a secret (it includes a token); never put it in agent.yml."
+        ),
+    )
+    timezone: str = Field(
+        default="",
+        description=(
+            "Optional IANA timezone name (e.g., 'America/New_York'). "
+            "When empty, uses the calendar's own DTSTART timezone if present, "
+            "or the system default. Affects only display — internal storage is UTC."
+        ),
+    )
+    lookahead_hours: int = Field(
+        default=168,
+        ge=1,
+        description=(
+            "How far ahead to expand recurring events. 168 = one week. Tradeoff: "
+            "larger window means slower expansion of high-frequency RRULEs."
+        ),
+    )
+    timeout_seconds: float = Field(
+        default=15.0,
+        gt=0.0,
+        description="HTTP timeout for ICS fetch.",
+    )
+    inject_into_chat: bool = Field(
+        default=True,
+        description=(
+            "When True, the chat REPL surfaces today's events alongside "
+            "obligations + openbrain hits. Set False to keep chat tighter."
+        ),
+    )
+
+
 # ── Root ────────────────────────────────────────────────────────────────────
 
 
@@ -722,6 +784,7 @@ class AgentSettings(BaseModel):
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     email: EmailSettings = Field(default_factory=EmailSettings)
+    calendar: CalendarSettings = Field(default_factory=CalendarSettings)
 
 
 __all__ = [

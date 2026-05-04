@@ -50,6 +50,8 @@ class ChatSession:
     """Pull active obligations into the system prompt before each turn."""
     inject_openbrain: bool = True
     """Run a semantic search against the user's last message and include hits."""
+    inject_calendar: bool = True
+    """Pull today's calendar events into the system prompt before each turn."""
     openbrain_hits: int = 3
     """How many openbrain hits to include per turn."""
     obligation_limit: int = 10
@@ -90,14 +92,34 @@ def build_context_prompt(
     base_system: str,
     obligations: list | None = None,
     openbrain_hits: list | None = None,
+    calendar_events: list | None = None,
 ) -> str:
-    """Compose the system prompt: base + obligations + openbrain hits.
+    """Compose the system prompt: base + obligations + openbrain hits + calendar.
 
     Each section gets a clearly-labeled header so the model can refer back
     to citations explicitly. Empty sections are dropped (not included as
     "no current obligations" etc. — saves tokens).
     """
     parts: list[str] = [base_system]
+
+    if calendar_events:
+        lines = ["", "## Today's calendar"]
+        for ev in calendar_events:
+            summary = getattr(ev, "summary", "(no title)")
+            start = getattr(ev, "start", None)
+            location = getattr(ev, "location", "")
+            if getattr(ev, "all_day", False):
+                line = f"- (all day) {summary}"
+            elif start:
+                # HH:MM in the event's tz; fall back to UTC if naive
+                time_str = start.strftime("%H:%M")
+                line = f"- {time_str} {summary}"
+            else:
+                line = f"- {summary}"
+            if location:
+                line += f" — {location}"
+            lines.append(line)
+        parts.append("\n".join(lines))
 
     if obligations:
         lines = ["", "## Currently active obligations"]
@@ -139,6 +161,7 @@ def run_turn(
     language_model: Any,
     db: Any | None = None,
     openbrain: Any | None = None,
+    calendar: Any | None = None,
     max_tokens: int = 2048,
 ) -> str:
     """Run one chat turn. Returns the assistant's reply, mutates ``session``.
@@ -146,9 +169,13 @@ def run_turn(
     Pipeline:
       1. Look up active obligations (if inject_obligations + db given).
       2. Search openbrain for context (if inject_openbrain + openbrain given).
-      3. Build context-injected system prompt.
-      4. Call the LM with [system, ...history, user].
-      5. Append user + assistant messages to history.
+      3. Pull today's calendar events (if inject_calendar + calendar given).
+      4. Build context-injected system prompt.
+      5. Call the LM with [system, ...history, user].
+      6. Append user + assistant messages to history.
+
+    The ``calendar`` arg is a CalendarFetcher (or any object with a
+    ``fetch_events(start=, end=)`` method); failure to fetch is non-fatal.
     """
     obligations = []
     if session.inject_obligations and db is not None:
@@ -162,10 +189,21 @@ def run_turn(
             logger.debug("openbrain search failed: %s", e)
             hits = []
 
+    events = []
+    if session.inject_calendar and calendar is not None:
+        try:
+            from agent_core.work.calendar import fetch_today
+
+            events = fetch_today(calendar)
+        except Exception as e:
+            logger.debug("calendar fetch failed: %s", e)
+            events = []
+
     system = build_context_prompt(
         base_system=session.system_prompt or DEFAULT_SYSTEM_PROMPT,
         obligations=obligations,
         openbrain_hits=hits,
+        calendar_events=events,
     )
 
     # Compose the LM request: prior history flattened to a single user

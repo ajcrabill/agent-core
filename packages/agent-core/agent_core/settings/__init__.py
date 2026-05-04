@@ -25,6 +25,7 @@ from agent_core.settings.presets import PRESETS, apply_preset, list_presets
 from agent_core.settings.schema import (
     AgentSettings,
     AutonomySettings,
+    CalendarSettings,
     EmailIMAPSettings,
     EmailSettings,
     EmailSMTPSettings,
@@ -43,6 +44,7 @@ __all__ = [
     "PRESETS",
     "AgentSettings",
     "AutonomySettings",
+    "CalendarSettings",
     "EmailIMAPSettings",
     "EmailSMTPSettings",
     "EmailSettings",

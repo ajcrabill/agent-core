@@ -504,6 +504,99 @@ def digest(config_path, db_url, hours, as_json, send, respect_cadence, respect_f
     click.echo(d.as_markdown())
 
 
+@cli.group(name="calendar")
+def calendar_group() -> None:
+    """Read-only calendar integration via ICS feed URL."""
+
+
+def _print_calendar_events(events) -> None:
+    if not events:
+        console.print("[dim]nothing on the calendar.[/dim]")
+        return
+    for ev in events:
+        if ev.all_day:
+            line = f"[dim](all day)[/dim] {ev.summary}"
+        else:
+            time_str = ev.start.strftime("%H:%M")
+            line = f"[cyan]{time_str}[/cyan]  {ev.summary}"
+        if ev.location:
+            line += f" [dim]@ {ev.location}[/dim]"
+        console.print(line)
+
+
+@calendar_group.command(name="today")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+)
+def calendar_today(config_path):
+    """Show today's calendar events (UTC midnight to next-midnight)."""
+    from agent_core.secrets import default_store
+    from agent_core.settings import SettingsManager
+    from agent_core.work.calendar import (
+        CalendarFetchError,
+        CalendarFetcher,
+        fetch_today,
+    )
+
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    try:
+        fetcher = CalendarFetcher.from_settings(mgr.settings, default_store())
+    except CalendarFetchError as e:
+        console.print(f"[red]calendar not configured:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    events = fetch_today(fetcher)
+    _print_calendar_events(events)
+
+
+@calendar_group.command(name="upcoming")
+@click.option(
+    "--hours",
+    type=int,
+    default=24,
+    show_default=True,
+    help="How far ahead to look. 24 = next day, 168 = next week.",
+)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+)
+def calendar_upcoming(hours, config_path):
+    """Show events in the next ``--hours`` from now."""
+    from agent_core.secrets import default_store
+    from agent_core.settings import SettingsManager
+    from agent_core.work.calendar import (
+        CalendarFetchError,
+        CalendarFetcher,
+        fetch_window,
+    )
+
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    try:
+        fetcher = CalendarFetcher.from_settings(mgr.settings, default_store())
+    except CalendarFetchError as e:
+        console.print(f"[red]calendar not configured:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    events = fetch_window(fetcher, hours=hours)
+    _print_calendar_events(events)
+
+
 @cli.group(name="email")
 def email_group() -> None:
     """Email integration — IMAP inbound today, Gmail OAuth + SMTP later."""
@@ -1294,6 +1387,21 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
     db = Database(db_url) if db_url else None
     openbrain = OpenBrainStore.from_settings(mgr.settings, db) if db else None
 
+    # Calendar: optional, opt-in via settings. Built once per session;
+    # fetch_today runs per turn inside run_turn (cheap — single HTTP).
+    calendar = None
+    if (
+        not no_context
+        and mgr.settings.calendar.enabled
+        and mgr.settings.calendar.inject_into_chat
+    ):
+        from agent_core.work.calendar import CalendarFetcher, CalendarFetchError
+
+        try:
+            calendar = CalendarFetcher.from_settings(mgr.settings, default_store())
+        except CalendarFetchError as e:
+            console.print(f"[yellow]calendar disabled:[/yellow] {e}")
+
     if stub_llm:
         lm = _smart_stub_lm()
         provider_label = "stub-llm (forced)"
@@ -1324,7 +1432,7 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
     console.print(f"[dim]chatting with {provider_label}. Ctrl-D or /exit to quit.[/dim]")
     console.print(
         "[dim]Slash commands: /help, /reset, /context, /triage, /run, /digest, "
-        "/capture, /drafts, /send, /exit.[/dim]"
+        "/capture, /drafts, /send, /today, /exit.[/dim]"
     )
     console.print()
 
@@ -1352,6 +1460,7 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
                 "/capture <text> add an inbox obligation; next /triage will classify it\n"
                 "/drafts        list pending email drafts awaiting your approval\n"
                 "/send <id>     send a drafted reply via SMTP (with preview)\n"
+                "/today         show today's calendar (if calendar.enabled)\n"
                 "/exit          quit"
                 "[/dim]"
             )
@@ -1394,6 +1503,18 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
         if text == "/drafts":
             _list_drafts_inline(db=db)
             continue
+        if text == "/today":
+            if calendar is None:
+                console.print(
+                    "[yellow]calendar not configured. "
+                    "Set calendar.enabled=true and stash the ICS URL.[/yellow]"
+                )
+            else:
+                from agent_core.work.calendar import fetch_today
+
+                events = fetch_today(calendar)
+                _print_calendar_events(events)
+            continue
         if text.startswith("/send"):
             target = text[len("/send") :].strip()
             if not target:
@@ -1412,6 +1533,7 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
                 language_model=lm,
                 db=db,
                 openbrain=openbrain,
+                calendar=calendar,
                 max_tokens=max_tokens,
             )
         except LanguageModelError as e:

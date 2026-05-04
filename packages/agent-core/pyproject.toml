@@ -34,6 +34,8 @@ dependencies = [
     # Web API for UI plugins (Sprint 11 — OpenWebUI fork talks to this)
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    # Calendar (Sprint 23 — ICS feed parsing + RRULE expansion)
+    "icalendar>=5.0",
 ]
 
 [project.optional-dependencies]

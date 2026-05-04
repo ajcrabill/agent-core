@@ -120,6 +120,43 @@ def test_build_context_prompt_omits_empty_sections() -> None:
     assert out == "x"
 
 
+def test_build_context_prompt_includes_calendar_events() -> None:
+    """Sprint 23: today's events appear in the system prompt."""
+    from datetime import datetime, timezone
+
+    from agent_core.work.calendar import CalendarEvent
+
+    events = [
+        CalendarEvent(
+            uid="1",
+            summary="Q2 review",
+            start=datetime(2026, 5, 4, 14, 0, tzinfo=timezone.utc),
+            end=datetime(2026, 5, 4, 15, 0, tzinfo=timezone.utc),
+            location="Zoom",
+        ),
+        CalendarEvent(
+            uid="2",
+            summary="Off site day",
+            start=datetime(2026, 5, 4, 0, 0, tzinfo=timezone.utc),
+            end=datetime(2026, 5, 5, 0, 0, tzinfo=timezone.utc),
+            all_day=True,
+        ),
+    ]
+    out = build_context_prompt(base_system="x", calendar_events=events)
+    assert "Today's calendar" in out
+    assert "Q2 review" in out
+    assert "14:00" in out  # time-of-day rendering
+    assert "Zoom" in out
+    assert "(all day)" in out
+    assert "Off site day" in out
+
+
+def test_build_context_prompt_omits_empty_calendar_section() -> None:
+    out = build_context_prompt(base_system="x", calendar_events=[])
+    assert out == "x"
+    assert "Today's calendar" not in out
+
+
 # ── run_turn ───────────────────────────────────────────────────────────────
 
 

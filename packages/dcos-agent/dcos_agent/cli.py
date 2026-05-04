@@ -1526,6 +1526,13 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
             console.print(f"[yellow]unknown command:[/yellow] {text}")
             continue
 
+        def _on_tool_call(tool_name: str, args: dict) -> None:
+            # Show a quick status line so the user sees the agent doing work
+            arg_preview = ", ".join(f"{k}={v!r}" for k, v in args.items())[:60]
+            console.print(
+                f"[dim]🔧 {tool_name}({arg_preview})[/dim]"
+            )
+
         try:
             reply = run_turn(
                 user_message=text,
@@ -1535,6 +1542,7 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
                 openbrain=openbrain,
                 calendar=calendar,
                 max_tokens=max_tokens,
+                on_tool_call=_on_tool_call,
             )
         except LanguageModelError as e:
             console.print(f"[red]LLM error:[/red] {e}")

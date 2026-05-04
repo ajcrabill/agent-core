@@ -52,11 +52,21 @@ from agent_core.skills.runner import (
     SkillRunner,
 )
 from agent_core.skills.stubs import StubLanguageModel
+from agent_core.skills.tools import (
+    CompletionResponse,
+    ToolCall,
+    ToolContext,
+    ToolDefinition,
+    default_read_tools,
+    execute_tool_call,
+    run_tool_loop,
+)
 
 __all__ = [
     "DEFAULT_SYSTEM_PROMPT",
     "ChatMessage",
     "ChatSession",
+    "CompletionResponse",
     "LanguageModel",
     "LanguageModelError",
     "OpenAICompatLanguageModel",
@@ -71,8 +81,14 @@ __all__ = [
     "SkillResult",
     "SkillRunner",
     "StubLanguageModel",
+    "ToolCall",
+    "ToolContext",
+    "ToolDefinition",
     "build_context_prompt",
+    "default_read_tools",
     "default_registry",
+    "execute_tool_call",
     "language_model_from_settings",
+    "run_tool_loop",
     "run_turn",
 ]

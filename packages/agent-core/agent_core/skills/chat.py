@@ -52,6 +52,10 @@ class ChatSession:
     """Run a semantic search against the user's last message and include hits."""
     inject_calendar: bool = True
     """Pull today's calendar events into the system prompt before each turn."""
+    enable_tools: bool = True
+    """Sprint 24: let the LLM call read-only tools (list_obligations,
+    search_memory, today_calendar, upcoming_calendar) mid-turn. Falls back
+    to plain completion if the LM doesn't support tool-calls."""
     openbrain_hits: int = 3
     """How many openbrain hits to include per turn."""
     obligation_limit: int = 10
@@ -163,6 +167,7 @@ def run_turn(
     openbrain: Any | None = None,
     calendar: Any | None = None,
     max_tokens: int = 2048,
+    on_tool_call: Any | None = None,
 ) -> str:
     """Run one chat turn. Returns the assistant's reply, mutates ``session``.
 
@@ -171,11 +176,17 @@ def run_turn(
       2. Search openbrain for context (if inject_openbrain + openbrain given).
       3. Pull today's calendar events (if inject_calendar + calendar given).
       4. Build context-injected system prompt.
-      5. Call the LM with [system, ...history, user].
+      5. If enable_tools and the LM supports complete_with_tools, run a
+         tool-loop with the read-only tool set (list_obligations,
+         search_memory, today_calendar, upcoming_calendar). Otherwise
+         fall back to plain ``complete(system, user)``.
       6. Append user + assistant messages to history.
 
     The ``calendar`` arg is a CalendarFetcher (or any object with a
     ``fetch_events(start=, end=)`` method); failure to fetch is non-fatal.
+
+    ``on_tool_call`` is an optional callback ``(tool_name, args)`` for
+    chat surfaces that want to print "🔧 calling …" status lines.
     """
     obligations = []
     if session.inject_obligations and db is not None:
@@ -206,23 +217,52 @@ def run_turn(
         calendar_events=events,
     )
 
-    # Compose the LM request: prior history flattened to a single user
-    # message string. (The LanguageModel Protocol takes system+user only;
-    # multi-turn history needs to be concatenated. Future Protocol version
-    # will accept a list of messages.)
-    if session.history:
-        history_str = "\n\n".join(
-            f"{m.role.title()}: {m.content}" for m in session.history
-        )
-        user = f"{history_str}\n\nUser: {user_message}"
-    else:
-        user = user_message
-
-    reply = language_model.complete(
-        system=system,
-        user=user,
-        max_tokens=max_tokens,
+    # Tool-use path (Sprint 24): if the LM advertises complete_with_tools
+    # and the session enables tools, drive a tool loop. Otherwise fall
+    # through to the legacy single-shot completion (history flattened).
+    use_tools = (
+        session.enable_tools
+        and hasattr(language_model, "complete_with_tools")
     )
+    if use_tools:
+        from agent_core.skills.tools import (
+            ToolContext,
+            default_read_tools,
+            run_tool_loop,
+        )
+
+        history_messages = [
+            {"role": m.role, "content": m.content} for m in session.history
+        ]
+        tool_context = ToolContext(
+            db=db, openbrain=openbrain, calendar=calendar, settings=None
+        )
+        reply = run_tool_loop(
+            language_model=language_model,
+            system=system,
+            user_message=user_message,
+            history=history_messages,
+            tools=default_read_tools(),
+            context=tool_context,
+            max_tokens=max_tokens,
+            on_tool_call=on_tool_call,
+        )
+    else:
+        # Legacy single-shot path. Flatten history into the user message
+        # since the base Protocol takes only system + user.
+        if session.history:
+            history_str = "\n\n".join(
+                f"{m.role.title()}: {m.content}" for m in session.history
+            )
+            user = f"{history_str}\n\nUser: {user_message}"
+        else:
+            user = user_message
+
+        reply = language_model.complete(
+            system=system,
+            user=user,
+            max_tokens=max_tokens,
+        )
 
     session.append("user", user_message)
     session.append("assistant", reply)

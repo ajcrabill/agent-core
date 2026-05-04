@@ -34,6 +34,7 @@ add streaming / tool-calling when needed.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 
@@ -138,6 +139,100 @@ class OpenAICompatLanguageModel:
             )
 
         return content
+
+    # ── Tool-use (Sprint 24) ───────────────────────────────────────────────
+
+    def complete_with_tools(
+        self,
+        *,
+        system: str,
+        messages: list[dict],
+        tools: list,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+    ) -> "CompletionResponse":  # noqa: F821
+        """Send a chat-completions request with tool-use enabled.
+
+        Returns a CompletionResponse: either text content or a list of
+        tool_calls the caller must execute and feed back. The OpenAI
+        Chat Completions tools API drives this — most newer providers
+        (OpenAI, Mistral, DeepSeek, Together, Groq, OpenRouter against
+        a tools-capable model) support it. Older / smaller models may
+        ignore the tools field; in that case we just get content.
+        """
+        from agent_core.skills.tools import CompletionResponse, ToolCall
+
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        # System-prompt prefix message + caller-supplied messages
+        full_messages = [{"role": "system", "content": system}, *messages]
+
+        payload: dict = {
+            "model": self.model,
+            "messages": full_messages,
+            "max_tokens": max_tokens or self.default_max_tokens,
+            "temperature": (
+                temperature if temperature is not None else self.default_temperature
+            ),
+        }
+        if tools:
+            payload["tools"] = [t.to_openai_format() for t in tools]
+            payload["tool_choice"] = "auto"
+
+        try:
+            resp = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
+        except httpx.TimeoutException as e:
+            raise LanguageModelError(
+                f"timeout after {self.timeout}s talking to {self.base_url}"
+            ) from e
+        except httpx.HTTPError as e:
+            raise LanguageModelError(f"network error to {self.base_url}: {e}") from e
+
+        if resp.status_code >= 400:
+            body = resp.text[:500]
+            raise LanguageModelError(
+                f"{self.base_url} returned {resp.status_code}: {body}"
+            )
+
+        try:
+            data = resp.json()
+        except ValueError as e:
+            raise LanguageModelError(
+                f"{self.base_url} returned non-JSON: {resp.text[:200]}"
+            ) from e
+
+        try:
+            choice = data["choices"][0]
+            message = choice["message"]
+        except (KeyError, IndexError, TypeError) as e:
+            raise LanguageModelError(
+                f"unexpected response shape from {self.base_url}: {data}"
+            ) from e
+
+        content = message.get("content")
+        raw_tool_calls = message.get("tool_calls") or []
+
+        tool_calls = []
+        for tc in raw_tool_calls:
+            try:
+                fn = tc.get("function") or {}
+                args_raw = fn.get("arguments") or "{}"
+                args = json.loads(args_raw) if isinstance(args_raw, str) else dict(args_raw)
+                tool_calls.append(
+                    ToolCall(
+                        id=tc.get("id") or "",
+                        name=fn.get("name") or "",
+                        arguments=args,
+                    )
+                )
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning("malformed tool_call skipped: %s", e)
+                continue
+
+        return CompletionResponse(content=content, tool_calls=tool_calls)
 
 
 # ── Factory ─────────────────────────────────────────────────────────────────

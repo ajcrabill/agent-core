@@ -176,14 +176,38 @@ def test_run_turn_calls_llm_and_records_history() -> None:
 
 
 def test_run_turn_includes_history_in_user_prompt() -> None:
+    """Legacy single-shot path: when tool-use is disabled, history flattens
+    into the user prompt. (Sprint 24+: with tools enabled, history is
+    passed as separate messages — see test_run_turn_tools_pass_history.)"""
     lm = StubLanguageModel(default="ok")
-    session = ChatSession(inject_obligations=False, inject_openbrain=False)
+    session = ChatSession(
+        inject_obligations=False,
+        inject_openbrain=False,
+        enable_tools=False,
+    )
     run_turn(user_message="first message", session=session, language_model=lm)
     run_turn(user_message="second message", session=session, language_model=lm)
     # The second turn's user-prompt should reference the first turn
     second_call_user = lm.calls[1]["user"]
     assert "first message" in second_call_user
     assert "second message" in second_call_user
+
+
+def test_run_turn_tools_pass_history_as_messages() -> None:
+    """Sprint 24: with tools enabled, history is passed to the LM as
+    proper OpenAI-format messages, not flattened into the user prompt."""
+    lm = StubLanguageModel(default="ok")
+    session = ChatSession(inject_obligations=False, inject_openbrain=False)
+    run_turn(user_message="first message", session=session, language_model=lm)
+    run_turn(user_message="second message", session=session, language_model=lm)
+
+    # The second tool-call should have BOTH first/second messages as separate
+    # entries, plus the prior assistant reply.
+    second = lm.tool_calls_recorded[1]
+    user_messages = [m for m in second["messages"] if m.get("role") == "user"]
+    user_contents = [m["content"] for m in user_messages]
+    assert "first message" in user_contents
+    assert "second message" in user_contents
 
 
 def test_run_turn_injects_obligations() -> None:

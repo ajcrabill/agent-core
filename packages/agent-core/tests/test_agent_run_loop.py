@@ -264,3 +264,239 @@ def test_run_loop_with_empty_db_idle_tick() -> None:
     run_loop(db=db, settings=AgentSettings(), once=True, on_tick=received.append)
     assert received[0].stalled_total == 0
     assert received[0].notifications_sent == 0
+
+
+# ── triage_inbox: auto-classify inbox emails ──────────────────────────────
+
+
+import json as _json
+
+import dcos_agent.skills  # noqa: F401  — registers email-triage in default_registry
+
+from agent_core.agent.run_loop import TriageReport, triage_inbox
+from agent_core.skills import StubLanguageModel
+from agent_core.state.models import ObligationEvent
+
+
+def _email_obligation(*, sender="news@example.com", subject="hello", body="x") -> Obligation:
+    return Obligation(
+        title=f"Email from {sender}: {subject}",
+        body=body,
+        source=ObligationSource.inbound_email,
+        status=ObligationStatus.inbox,
+    )
+
+
+def _triage_lm(action: str, score: float = 0.95, reasoning: str = "stub") -> StubLanguageModel:
+    """Build a StubLanguageModel that returns valid email-triage JSON."""
+    return StubLanguageModel(
+        default=_json.dumps(
+            {"action": action, "score": score, "reasoning": reasoning}
+        )
+    )
+
+
+def test_triage_skips_when_no_inbox_emails() -> None:
+    db = _db()
+    report = triage_inbox(db=db, settings=AgentSettings(), language_model=_triage_lm("flag"))
+    assert report.candidates == 0
+    assert report.triaged == 0
+
+
+def test_triage_classifies_inbox_email() -> None:
+    db = _db()
+    with db.session() as s:
+        s.add(_email_obligation(sender="boss@x.com", subject="urgent question"))
+        s.commit()
+
+    report = triage_inbox(
+        db=db, settings=AgentSettings(), language_model=_triage_lm("flag", score=0.9)
+    )
+    assert report.candidates == 1
+    assert report.triaged == 1
+    assert report.by_action == {"flag": 1}
+
+
+def test_triage_archive_high_confidence_moves_to_done() -> None:
+    """High-confidence archive transitions inbox → done."""
+    db = _db()
+    with db.session() as s:
+        ob = _email_obligation(sender="news@nytimes.com", subject="Daily digest")
+        s.add(ob)
+        s.commit()
+        s.refresh(ob)
+        ob_id = ob.id
+
+    triage_inbox(
+        db=db, settings=AgentSettings(), language_model=_triage_lm("archive", score=0.95)
+    )
+
+    with db.session() as s:
+        row = s.get(Obligation, ob_id)
+    assert row.status == ObligationStatus.done
+    assert row.completed_at is not None
+
+
+def test_triage_low_confidence_keeps_in_inbox() -> None:
+    """Confidence below settings.learning.confidence_medium (0.5) →
+    obligation stays in inbox even on archive — human review needed."""
+    db = _db()
+    with db.session() as s:
+        ob = _email_obligation()
+        s.add(ob)
+        s.commit()
+        s.refresh(ob)
+        ob_id = ob.id
+
+    triage_inbox(
+        db=db, settings=AgentSettings(), language_model=_triage_lm("archive", score=0.3)
+    )
+
+    with db.session() as s:
+        row = s.get(Obligation, ob_id)
+    assert row.status == ObligationStatus.inbox
+
+
+def test_triage_idempotent_skip_already_triaged() -> None:
+    """A second tick should NOT re-triage. Counts go to skipped_already_triaged."""
+    db = _db()
+    with db.session() as s:
+        s.add(_email_obligation())
+        s.commit()
+
+    lm = _triage_lm("flag")
+    r1 = triage_inbox(db=db, settings=AgentSettings(), language_model=lm)
+    r2 = triage_inbox(db=db, settings=AgentSettings(), language_model=lm)
+
+    assert r1.triaged == 1
+    assert r2.triaged == 0
+    assert r2.skipped_already_triaged == 1
+    assert len(lm.calls) == 1  # second call DIDN'T hit the LM
+
+
+def test_triage_records_event_with_decision() -> None:
+    """Each triage records an ObligationEvent with the decision payload —
+    surfaces in the audit trail."""
+    db = _db()
+    with db.session() as s:
+        ob = _email_obligation()
+        s.add(ob)
+        s.commit()
+        s.refresh(ob)
+        ob_id = ob.id
+
+    triage_inbox(
+        db=db,
+        settings=AgentSettings(),
+        language_model=_triage_lm("hold", score=0.9, reasoning="not urgent"),
+    )
+
+    with db.session() as s:
+        events = list(
+            s.exec(
+                select(ObligationEvent)
+                .where(ObligationEvent.obligation_id == ob_id)
+                .where(ObligationEvent.actor == "agent-triage")
+            ).all()
+        )
+
+    # Two events: one status_changed (hold → waiting), one comment (decision)
+    kinds = {e.kind.value for e in events}
+    assert "status_changed" in kinds
+    assert "comment" in kinds
+
+    decision = next(e for e in events if e.kind.value == "comment")
+    assert decision.payload["type"] == "triage"
+    assert decision.payload["action"] == "hold"
+    assert decision.payload["confidence"] == pytest.approx(0.9)
+    assert decision.payload["reasoning"] == "not urgent"
+
+
+def test_triage_respects_limit() -> None:
+    """limit caps the number of triages per tick (back-pressure)."""
+    db = _db()
+    with db.session() as s:
+        for i in range(5):
+            s.add(_email_obligation(subject=f"msg {i}"))
+        s.commit()
+
+    report = triage_inbox(
+        db=db,
+        settings=AgentSettings(),
+        language_model=_triage_lm("flag"),
+        limit=2,
+    )
+    assert report.triaged == 2
+
+
+def test_triage_skill_failure_surfaces_in_errors() -> None:
+    """If email-triage raises (e.g., model returns garbage), error → report
+    but other obligations still get processed."""
+    db = _db()
+    with db.session() as s:
+        s.add(_email_obligation(subject="will fail"))
+        s.add(_email_obligation(subject="will succeed"))
+        s.commit()
+
+    # Cycle two responses: first invalid JSON, second valid
+    bad_lm = StubLanguageModel(
+        responses=[
+            "not valid json {{",
+            _json.dumps({"action": "flag", "score": 0.9, "reasoning": "ok"}),
+        ]
+    )
+    report = triage_inbox(
+        db=db, settings=AgentSettings(), language_model=bad_lm
+    )
+
+    assert report.triaged == 1  # only one succeeded
+    assert len(report.errors) == 1
+
+
+def test_triage_no_email_obligations_skipped() -> None:
+    """Manual-source obligations are NOT triaged — only inbound_email."""
+    db = _db()
+    with db.session() as s:
+        s.add(
+            Obligation(
+                title="manually created",
+                source=ObligationSource.manual,
+                status=ObligationStatus.inbox,
+            )
+        )
+        s.commit()
+
+    report = triage_inbox(db=db, settings=AgentSettings(), language_model=_triage_lm("flag"))
+    assert report.candidates == 0
+
+
+def test_run_tick_includes_triage_in_report() -> None:
+    """End-to-end: run_tick wires through to triage_inbox + reports counts."""
+    db = _db()
+    with db.session() as s:
+        s.add(_email_obligation())
+        s.commit()
+
+    report = run_tick(
+        db=db,
+        settings=AgentSettings(),
+        language_model=_triage_lm("flag", score=0.9),
+    )
+    assert report.triage is not None
+    assert report.triage.triaged == 1
+    assert report.triage.by_action == {"flag": 1}
+
+
+def test_run_tick_triage_disabled_skips_step() -> None:
+    db = _db()
+    with db.session() as s:
+        s.add(_email_obligation())
+        s.commit()
+
+    report = run_tick(
+        db=db,
+        settings=AgentSettings(),
+        language_model=_triage_lm("flag"),
+        triage_enabled=False,
+    )
+    assert report.triage is None

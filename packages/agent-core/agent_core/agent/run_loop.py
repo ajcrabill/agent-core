@@ -31,13 +31,29 @@ from __future__ import annotations
 import logging
 import signal
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 # ── Result types ───────────────────────────────────────────────────────────
+
+
+@dataclass
+class TriageReport:
+    """Subset of tick activity: how many inbox-status email obligations got
+    auto-classified this tick by the email-triage skill."""
+
+    candidates: int = 0
+    """Inbox+email obligations eligible for triage this tick."""
+    triaged: int = 0
+    """How many actually got a triage decision (rest skipped because
+    already-triaged or LLM error)."""
+    by_action: dict[str, int] = field(default_factory=dict)
+    """Counts per email-triage action: flag/archive/hold/draft/…"""
+    skipped_already_triaged: int = 0
+    errors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -52,6 +68,7 @@ class TickReport:
     notifications_dropped: int
     duration_seconds: float
     errors: list[str]
+    triage: TriageReport | None = None
 
 
 # ── Single tick ────────────────────────────────────────────────────────────
@@ -63,6 +80,9 @@ def run_tick(
     settings: Any,
     dispatcher: Any | None = None,
     pipeline_monitor: Any | None = None,
+    language_model: Any | None = None,
+    triage_enabled: bool = True,
+    triage_limit: int = 20,
     tick_number: int = 0,
 ) -> TickReport:
     """One iteration of the autonomous loop.
@@ -72,6 +92,12 @@ def run_tick(
         settings: AgentSettings (or SettingsManager — drilled into ``.settings``).
         dispatcher: NotificationDispatcher. None → no notifications.
         pipeline_monitor: pre-built PipelineMonitor. None → built from settings.
+        language_model: pre-built LanguageModel for triage. None → built from
+            settings + secrets store. Triage skipped if construction fails.
+        triage_enabled: If True (default), auto-triage inbox-status email
+            obligations using the email-triage skill.
+        triage_limit: Max obligations to triage per tick (back-pressure on
+            large inboxes — trickle through over multiple ticks).
         tick_number: monotonic counter for logs.
 
     Returns a ``TickReport``. Never raises — errors land in ``report.errors``.
@@ -145,6 +171,17 @@ def run_tick(
                 errors.append(f"notify {item.obligation.id[:8]}: {e}")
                 dropped += 1
 
+    # 3. Triage inbox-status email obligations.
+    triage_report: TriageReport | None = None
+    if triage_enabled:
+        triage_report = triage_inbox(
+            db=db,
+            settings=settings,
+            language_model=language_model,
+            limit=triage_limit,
+        )
+        errors.extend(triage_report.errors)
+
     return TickReport(
         tick_number=tick_number,
         stalled_total=len(scan_result.stalled),
@@ -154,7 +191,215 @@ def run_tick(
         notifications_dropped=dropped,
         duration_seconds=time.time() - started,
         errors=errors,
+        triage=triage_report,
     )
+
+
+# ── Triage step ────────────────────────────────────────────────────────────
+
+
+# Maps email-triage skill action → ObligationStatus transition.
+# - flag: stays inbox (the user needs to look)
+# - archive: → done (auto-archive per L23 archive_instead_of_delete)
+# - hold: → waiting (revisit in a few days)
+# - draft: → in-progress (signals "agent should draft via email-composer")
+# - track-relationship: stays inbox (still needs a reply, but People note also
+#                         needs creating — separate flow once that lands)
+# - task: stays inbox (it IS a task; no auto-transition)
+_TRIAGE_TO_STATUS = {
+    "flag": None,                      # stays inbox
+    "archive": "done",
+    "hold": "waiting",
+    "draft": "in_progress",
+    "track-relationship": None,        # stays inbox
+    "task": None,                       # stays inbox
+}
+
+
+def triage_inbox(
+    *,
+    db: Any,
+    settings: Any,
+    language_model: Any | None = None,
+    limit: int = 20,
+) -> TriageReport:
+    """Run email-triage on inbox-status email obligations.
+
+    Idempotent: only triages obligations without a prior triage event.
+    The decision is recorded as an ObligationEvent (kind=comment, payload
+    type='triage') so subsequent ticks skip them.
+
+    Status transitions per ``_TRIAGE_TO_STATUS``. Confidence below the
+    settings.learning.confidence_medium threshold leaves the obligation
+    in inbox regardless of action — low-confidence calls need human review.
+
+    Returns a ``TriageReport``. Never raises.
+    """
+    from sqlmodel import select
+
+    from agent_core.skills import LanguageModelError, language_model_from_settings
+    from agent_core.state.models import (
+        Obligation,
+        ObligationEvent,
+        ObligationEventKind,
+        ObligationSource,
+        ObligationStatus,
+        utcnow,
+    )
+
+    settings_obj = getattr(settings, "settings", settings)
+    report = TriageReport()
+
+    # Build the LanguageModel. If construction fails (no key configured),
+    # skip triage silently — the user gets stalled-detection without it.
+    if language_model is None:
+        try:
+            from agent_core.secrets import default_store
+
+            language_model = language_model_from_settings(settings_obj, default_store())
+        except LanguageModelError as e:
+            report.errors.append(f"triage skipped: LLM not configured ({e})")
+            return report
+
+    # Find candidates: inbox + email source
+    with db.session() as s:
+        stmt = (
+            select(Obligation)
+            .where(Obligation.status == ObligationStatus.inbox)
+            .where(Obligation.source == ObligationSource.inbound_email)
+            .order_by(Obligation.priority.desc(), Obligation.created_at)
+            .limit(limit * 2)  # over-fetch; idempotency filter happens below
+        )
+        candidates = list(s.exec(stmt).all())
+
+        # Idempotency: skip obligations that already have a triage event.
+        ob_ids = [ob.id for ob in candidates]
+        if ob_ids:
+            triaged_event_rows = list(
+                s.exec(
+                    select(ObligationEvent)
+                    .where(ObligationEvent.obligation_id.in_(ob_ids))
+                    .where(ObligationEvent.actor == "agent-triage")
+                ).all()
+            )
+            already_triaged = {e.obligation_id for e in triaged_event_rows}
+        else:
+            already_triaged = set()
+
+    fresh = [ob for ob in candidates if ob.id not in already_triaged]
+    report.candidates = len(candidates)
+    report.skipped_already_triaged = len(candidates) - len(fresh)
+
+    if not fresh:
+        return report
+
+    # Run triage on each, up to limit.
+    from agent_core.skills import SkillContext, SkillRunner, default_registry
+
+    runner = SkillRunner(default_registry)
+    confidence_floor = settings_obj.learning.confidence_medium
+
+    for ob in fresh[:limit]:
+        # Email obligations have title="Email from <sender>: <subject>"
+        # per InboundCapture.capture_email. Reverse-engineer sender for
+        # the skill input.
+        sender, subject = _extract_sender_subject(ob.title)
+        body = ob.body or ""
+
+        ctx = SkillContext(
+            settings=settings_obj,
+            db=db,
+            language_model=language_model,
+        )
+        outcome = runner.run(
+            "email-triage",
+            {"sender": sender, "subject": subject, "body": body},
+            ctx,
+        )
+        if not outcome.succeeded:
+            report.errors.append(
+                f"triage {ob.id[:8]}: {outcome.error}"
+            )
+            continue
+
+        result = outcome.result
+        action = result.output.action
+        confidence = result.confidence
+        report.triaged += 1
+        report.by_action[action] = report.by_action.get(action, 0) + 1
+
+        # Confidence-gated transition. Low-confidence stays inbox even for
+        # would-be-actionable triage (archive/hold/draft) so the human can
+        # review.
+        new_status_name = _TRIAGE_TO_STATUS.get(action)
+        applied = False
+        if new_status_name and confidence >= confidence_floor:
+            # Map status string → ObligationStatus enum
+            try:
+                new_status = ObligationStatus[new_status_name]
+            except KeyError:
+                new_status = None
+            if new_status is not None:
+                with db.session() as s:
+                    row = s.get(Obligation, ob.id)
+                    if row is not None and row.status == ObligationStatus.inbox:
+                        row.status = new_status
+                        row.updated_at = utcnow()
+                        if new_status == ObligationStatus.done:
+                            row.completed_at = utcnow()
+                        elif new_status == ObligationStatus.in_progress:
+                            row.started_at = utcnow()
+                        s.add(row)
+
+                        # Status-change event
+                        s.add(
+                            ObligationEvent(
+                                obligation_id=ob.id,
+                                kind=ObligationEventKind.status_changed,
+                                actor="agent-triage",
+                                payload={
+                                    "from": ObligationStatus.inbox.value,
+                                    "to": new_status.value,
+                                    "reason": "auto-triage",
+                                },
+                            )
+                        )
+                        s.commit()
+                        applied = True
+
+        # Always record a triage decision event (idempotency marker).
+        with db.session() as s:
+            s.add(
+                ObligationEvent(
+                    obligation_id=ob.id,
+                    kind=ObligationEventKind.comment,
+                    actor="agent-triage",
+                    payload={
+                        "type": "triage",
+                        "action": action,
+                        "confidence": confidence,
+                        "reasoning": result.output.reasoning or "",
+                        "status_changed": applied,
+                    },
+                )
+            )
+            s.commit()
+
+    return report
+
+
+def _extract_sender_subject(title: str) -> tuple[str, str]:
+    """Pull (sender, subject) out of an obligation title that follows
+    InboundCapture.capture_email's format ``"Email from <sender>: <subject>"``.
+
+    Falls through to ``("unknown", title)`` if the format doesn't match —
+    the skill still works, just with less context."""
+    if title.startswith("Email from "):
+        rest = title[len("Email from ") :]
+        sep = rest.find(": ")
+        if sep > 0:
+            return rest[:sep], rest[sep + 2 :]
+    return "unknown", title
 
 
 # ── Main loop ──────────────────────────────────────────────────────────────
@@ -242,10 +487,15 @@ def _default_on_tick(report: TickReport) -> None:
     )
     if report.notifications_dropped:
         summary += f" ({report.notifications_dropped} dropped)"
+    if report.triage and report.triage.triaged:
+        actions = ", ".join(
+            f"{k}={v}" for k, v in sorted(report.triage.by_action.items())
+        )
+        summary += f"; triaged {report.triage.triaged} ({actions})"
     if report.errors:
         summary += f" — errors: {report.errors}"
     logger.info(summary)
     print(summary, flush=True)
 
 
-__all__ = ["TickReport", "run_loop", "run_tick"]
+__all__ = ["TickReport", "TriageReport", "run_loop", "run_tick", "triage_inbox"]

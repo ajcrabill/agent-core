@@ -273,22 +273,68 @@ class FileSecretStore:
 # ── Default selection ────────────────────────────────────────────────────────
 
 
+_PROBE_NS = "_agent_core_probe"
+_PROBE_KEY = "writable"
+
+
+def _keyring_is_writable() -> bool:
+    """Probe the OS keychain by performing a no-op write/delete cycle.
+
+    On macOS over SSH (and other GUI-session-only configurations), the
+    keychain backend reports as "available" but every actual write fails
+    with -60008. The fail backend isn't selected by keyring's auto-pick;
+    we have to actually try a write. Probe-and-fail is much cheaper than
+    failing during init and confusing the user.
+
+    Returns True only when both set and delete succeed. Any exception is
+    treated as "not writable".
+    """
+    try:
+        import keyring
+
+        keyring.set_password(
+            f"{KeyringSecretStore.SERVICE_PREFIX}{_PROBE_NS}",
+            _PROBE_KEY,
+            "1",
+        )
+        # Best-effort cleanup — failures here are tolerable.
+        try:
+            keyring.delete_password(
+                f"{KeyringSecretStore.SERVICE_PREFIX}{_PROBE_NS}",
+                _PROBE_KEY,
+            )
+        except Exception:
+            pass
+        return True
+    except Exception as e:
+        logger.info("keychain not writable in this session: %s", e)
+        return False
+
+
 def default_store() -> SecretStore:
     """Return the right backend for this environment.
 
     Resolution order:
-      1. ``KeyringSecretStore`` — OS keychain (macOS Keychain / Windows
-         Credential Locker / Linux with Secret Service running).
+      1. ``KeyringSecretStore`` — OS keychain, but only after a write
+         probe confirms it actually works in this session. macOS over
+         SSH advertises the keychain backend as available but rejects
+         writes with -60008; the probe catches that without leaving the
+         user with an init that prints "could not store token".
       2. ``FileSecretStore`` — writable JSON file at
-         ``~/.local/state/agent-core/secrets.json`` (mode 0600). Default
-         on headless Linux installs.
+         ``~/.local/state/agent-core/secrets.json`` (mode 0600). Used
+         on headless Linux installs and macOS-over-SSH.
       3. ``EnvSecretStore`` — read-only fallback; only if neither of the
          above is usable.
 
-    The file fallback was added in Sprint 15g — Linux VPS installs were
-    silently falling all the way through to ``EnvSecretStore`` (read-only),
-    making ``dcos init`` unable to persist API tokens.
+    The file fallback was added in Sprint 15g; the write-probe was added
+    after observing macOS-over-SSH installs failing keychain writes
+    silently (Sprint 24-era real-world install runs).
+
+    Honors ``AGENTCORE_SECRETS_BACKEND=file`` to skip the probe and force
+    file storage — useful for power users automating headless installs.
     """
+    if os.environ.get("AGENTCORE_SECRETS_BACKEND") == "file":
+        return FileSecretStore()
     try:
         import keyring
         from keyring.backends.fail import Keyring as FailKeyring
@@ -296,7 +342,14 @@ def default_store() -> SecretStore:
         kr = keyring.get_keyring()
         if isinstance(kr, FailKeyring):
             logger.info(
-                "no usable OS keychain; using FileSecretStore at %s",
+                "no usable OS keychain backend; using FileSecretStore at %s",
+                FileSecretStore.DEFAULT_PATH,
+            )
+            return FileSecretStore()
+        if not _keyring_is_writable():
+            logger.info(
+                "keychain not writable (likely macOS over SSH); "
+                "using FileSecretStore at %s",
                 FileSecretStore.DEFAULT_PATH,
             )
             return FileSecretStore()

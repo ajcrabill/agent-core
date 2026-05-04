@@ -62,11 +62,39 @@ from agent_core.skills.tools import (
     run_tool_loop,
 )
 
+# Built-in reference skills. Importing these auto-registers them on
+# default_registry. Both dcos-agent and ikb-agent get them out of the box.
+from agent_core.skills.document_creator import DocumentCreator
+from agent_core.skills.email_composer import EmailComposer
+from agent_core.skills.email_triage import EmailTriage
+
+
+def register_default_skills(registry=None):
+    """Register the built-in skills on ``registry`` (default: process-wide).
+
+    Idempotent — already-registered skills are skipped silently. Both
+    products mount these via the import-time call below; tests or
+    subclassed registries can call this explicitly.
+    """
+    target = default_registry if registry is None else registry
+    for skill_cls in (EmailTriage, DocumentCreator, EmailComposer):
+        skill = skill_cls()
+        if skill.name in target:
+            continue
+        target.register(skill)
+
+
+# Auto-register at module import.
+register_default_skills()
+
 __all__ = [
     "DEFAULT_SYSTEM_PROMPT",
     "ChatMessage",
     "ChatSession",
     "CompletionResponse",
+    "DocumentCreator",
+    "EmailComposer",
+    "EmailTriage",
     "LanguageModel",
     "LanguageModelError",
     "OpenAICompatLanguageModel",
@@ -89,6 +117,7 @@ __all__ = [
     "default_registry",
     "execute_tool_call",
     "language_model_from_settings",
+    "register_default_skills",
     "run_tool_loop",
     "run_turn",
 ]

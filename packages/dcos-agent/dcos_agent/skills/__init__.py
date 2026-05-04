@@ -1,52 +1,31 @@
-"""dcos-agent default skills.
+"""Backward-compat shim: the three reference skills now ship in agent-core.
 
-Three reference skills ship out of the box:
+Pre-Sprint-25, ``email-triage``, ``email-composer``, and ``document-creator``
+lived under ``dcos_agent.skills``. They were always product-agnostic, so
+they moved into ``agent_core.skills`` where both dcos-agent and ikb-agent
+get them out of the box.
 
-  - ``email-triage``     — classifies an inbound email into one of six
-                            actions (flag / archive / hold / draft /
-                            track-relationship / task) per the taxonomy
-                            documented in
-                            Admin/Loriah Skills/learning-log/learning-log-data.md.
+This module preserves the old import paths for code that hasn't yet
+caught up:
 
-  - ``document-creator`` — drafts a document from a brief, optionally
-                            grounded in semantic context from openbrain.
+    from dcos_agent.skills import EmailTriage   # still works
+    import dcos_agent.skills                    # still triggers registration
 
-  - ``email-composer``   — drafts an email response, salutation-matched to
-                            the recipient and grounded in any prior thread
-                            context the caller provides.
-
-Each skill is a thin orchestration layer around a LanguageModel call. When
-``dcos_agent.skills`` is imported, the three are auto-registered into
-``agent_core.skills.default_registry`` — products that want to start clean
-build their own SkillRegistry instead.
+The skills are auto-registered when ``agent_core.skills`` is imported, so
+this shim is mainly for explicit imports — registration already happens.
 """
 
-from agent_core.skills import default_registry
-
-from dcos_agent.skills.document_creator import DocumentCreator
-from dcos_agent.skills.email_composer import EmailComposer
-from dcos_agent.skills.email_triage import EmailTriage
+from agent_core.skills import (
+    DocumentCreator,
+    EmailComposer,
+    EmailTriage,
+    register_default_skills,
+)
 
 
 def register_defaults(registry=None):
-    """Register the dcos-default skills on ``registry`` (default: process-wide).
-
-    Idempotent — re-registering raises in the underlying registry, but this
-    helper catches the duplicate and keeps the existing instance. Useful in
-    tests where multiple modules import ``dcos_agent.skills``.
-    """
-    # Explicit None check — an empty SkillRegistry is falsy (len == 0) and
-    # would silently fall through to the global default if we used `or`.
-    target = default_registry if registry is None else registry
-    for skill_cls in (EmailTriage, DocumentCreator, EmailComposer):
-        skill = skill_cls()
-        if skill.name in target:
-            continue
-        target.register(skill)
-
-
-# Auto-register into the process-wide default at import time.
-register_defaults()
+    """Backward-compat alias for ``agent_core.skills.register_default_skills``."""
+    register_default_skills(registry)
 
 
 __all__ = [

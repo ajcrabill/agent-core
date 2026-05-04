@@ -130,6 +130,50 @@ def test_setup_creates_config_dir(monkeypatch, tmp_path: Path) -> None:
     assert (tmp_path / "config" / "ikb-agent").exists()
 
 
+# ── Pathing quirk: `ikb settings set` resolves to ikb config dir ───────────
+
+
+def test_ikb_main_sets_agent_data_dir_to_ikb_config_dir(monkeypatch, tmp_path):
+    """Regression: same fix as dcos. ``ikb settings set foo=bar`` must
+    write to ``~/.config/ikb-agent/agent.yml``, not ``cwd/agent.yml``."""
+    import os
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.delenv("AGENT_DATA_DIR", raising=False)
+
+    from ikb_agent.cli import main
+
+    called: dict = {}
+
+    def fake_cli():
+        called["AGENT_DATA_DIR"] = os.environ.get("AGENT_DATA_DIR")
+
+    monkeypatch.setattr("ikb_agent.cli.cli", fake_cli)
+    main()
+
+    expected = tmp_path / "config" / "ikb-agent"
+    assert called["AGENT_DATA_DIR"] == str(expected)
+
+
+def test_ikb_main_respects_pre_existing_agent_data_dir(monkeypatch, tmp_path):
+    import os
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("AGENT_DATA_DIR", str(tmp_path / "custom"))
+
+    from ikb_agent.cli import main
+
+    called: dict = {}
+
+    def fake_cli():
+        called["AGENT_DATA_DIR"] = os.environ.get("AGENT_DATA_DIR")
+
+    monkeypatch.setattr("ikb_agent.cli.cli", fake_cli)
+    main()
+
+    assert called["AGENT_DATA_DIR"] == str(tmp_path / "custom")
+
+
 # ── Re-exports ─────────────────────────────────────────────────────────────
 
 

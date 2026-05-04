@@ -1205,6 +1205,22 @@ def _smart_stub_lm():
 
 
 def main() -> None:
+    """dcos-agent entry point.
+
+    Sets ``AGENT_DATA_DIR`` so the agent-core ``settings`` group (which we
+    borrow wholesale via ``cli.add_command``) resolves its default
+    ``--config`` path to ``~/.config/dcos-agent/agent.yml`` instead of
+    ``cwd/agent.yml``. Without this, ``dcos settings set foo=bar`` writes
+    to whatever directory the user happened to run from — confusing and
+    inconsistent with every other dcos subcommand (which already pass
+    ``--config default_settings_path()`` explicitly).
+
+    Honors any pre-existing AGENT_DATA_DIR — power users overriding the
+    location stay in control.
+    """
+    import os
+
+    os.environ.setdefault("AGENT_DATA_DIR", str(config_dir()))
     cli()
 
 

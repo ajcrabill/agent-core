@@ -146,6 +146,93 @@ def test_setup_no_init_skips_chained_steps(monkeypatch, tmp_path: Path) -> None:
     assert "agent doctor" not in result.output
 
 
+# ── Pathing quirk: `dcos settings set` resolves to dcos config dir ─────────
+
+
+def test_dcos_main_sets_agent_data_dir_to_dcos_config_dir(monkeypatch, tmp_path):
+    """Regression: previously `dcos settings set foo=bar` (no --config)
+    wrote to ``cwd/agent.yml`` because agent-core's _default_path() falls
+    back to cwd. dcos main() now sets AGENT_DATA_DIR so the borrowed
+    settings group resolves to ``~/.config/dcos-agent/agent.yml``."""
+    import os
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    # Make sure we don't inherit a previous AGENT_DATA_DIR
+    monkeypatch.delenv("AGENT_DATA_DIR", raising=False)
+
+    from dcos_agent.cli import main
+
+    # Patch cli() so we don't actually invoke a Click command — we just
+    # want to confirm AGENT_DATA_DIR ends up pointing at dcos's config dir.
+    called: dict = {}
+
+    def fake_cli():
+        called["AGENT_DATA_DIR"] = os.environ.get("AGENT_DATA_DIR")
+
+    monkeypatch.setattr("dcos_agent.cli.cli", fake_cli)
+    main()
+
+    expected = tmp_path / "config" / "dcos-agent"
+    assert called["AGENT_DATA_DIR"] == str(expected)
+
+
+def test_dcos_main_respects_pre_existing_agent_data_dir(monkeypatch, tmp_path):
+    """Power users who set AGENT_DATA_DIR explicitly should keep their override."""
+    import os
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("AGENT_DATA_DIR", str(tmp_path / "custom-dir"))
+
+    from dcos_agent.cli import main
+
+    called: dict = {}
+
+    def fake_cli():
+        called["AGENT_DATA_DIR"] = os.environ.get("AGENT_DATA_DIR")
+
+    monkeypatch.setattr("dcos_agent.cli.cli", fake_cli)
+    main()
+
+    # setdefault() should NOT clobber the pre-existing value
+    assert called["AGENT_DATA_DIR"] == str(tmp_path / "custom-dir")
+
+
+def test_dcos_settings_set_writes_to_dcos_config_dir(monkeypatch, tmp_path):
+    """End-to-end: ``dcos settings set foo=bar`` lands in the dcos config
+    file, not cwd/agent.yml. This is the user-visible repro of the original
+    quirk: the user runs `dcos settings set ...` from anywhere on disk and
+    expects it to show up in `dcos info`'s settings file."""
+    import os
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.delenv("AGENT_DATA_DIR", raising=False)
+    monkeypatch.chdir(tmp_path / "elsewhere" if False else tmp_path)
+
+    # Mirror what dcos's main() does — set AGENT_DATA_DIR then dispatch.
+    # We invoke the cli subcommand directly via CliRunner; main() itself
+    # is tested above.
+    os.environ.setdefault(
+        "AGENT_DATA_DIR", str(tmp_path / "config" / "dcos-agent")
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["settings", "set", "autonomy.default_policy=cautious"]
+    )
+    assert result.exit_code == 0, result.output
+
+    settings_file = tmp_path / "config" / "dcos-agent" / "agent.yml"
+    cwd_file = tmp_path / "agent.yml"
+    assert settings_file.exists(), f"expected dcos config to be written; got: {result.output}"
+    assert not cwd_file.exists(), "should NOT write to cwd"
+
+    body = settings_file.read_text()
+    assert "default_policy" in body
+    assert "cautious" in body
+
+
 # ── Sprint 19: chat slash-command helpers ──────────────────────────────────
 
 

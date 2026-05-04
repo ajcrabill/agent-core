@@ -283,6 +283,18 @@ def _redact_password(url: str) -> str:
 
 
 def main() -> None:
+    """ikb-agent entry point.
+
+    Sets ``AGENT_DATA_DIR`` so the agent-core ``settings`` group (borrowed
+    via ``cli.add_command``) resolves its default ``--config`` path to
+    ``~/.config/ikb-agent/agent.yml`` instead of ``cwd/agent.yml``. Without
+    this, ``ikb settings set foo=bar`` would write to whatever directory
+    the user happened to run from. Power users overriding AGENT_DATA_DIR
+    stay in control (setdefault).
+    """
+    import os
+
+    os.environ.setdefault("AGENT_DATA_DIR", str(config_dir()))
     cli()
 
 

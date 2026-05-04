@@ -233,6 +233,115 @@ def test_dcos_settings_set_writes_to_dcos_config_dir(monkeypatch, tmp_path):
     assert "cautious" in body
 
 
+# ── dcos secrets group ─────────────────────────────────────────────────────
+
+
+class _FakeStore:
+    """In-memory secret store for testing the CLI without touching keychain."""
+
+    def __init__(self):
+        self._data: dict[tuple[str, str], str] = {}
+
+    def get(self, ns, key):
+        return self._data.get((ns, key))
+
+    def set(self, ns, key, value):
+        self._data[(ns, key)] = value
+
+    def delete(self, ns, key):
+        self._data.pop((ns, key), None)
+
+    def list(self, ns):
+        return [k for (n, k) in self._data if n == ns]
+
+
+def test_secrets_set_one_shot_assignment(monkeypatch):
+    fake = _FakeStore()
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: fake)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["secrets", "set", "llm.openai_api_key=sk-abc123"]
+    )
+    assert result.exit_code == 0, result.output
+    assert fake.get("llm", "openai_api_key") == "sk-abc123"
+
+
+def test_secrets_set_rejects_missing_dot():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["secrets", "set", "no_dot=value"])
+    assert result.exit_code != 0
+    assert "namespace" in result.output.lower()
+
+
+def test_secrets_set_from_stdin(monkeypatch):
+    fake = _FakeStore()
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: fake)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["secrets", "set", "--from-stdin", "email.imap_password"],
+        input="my-app-pw\n",
+    )
+    assert result.exit_code == 0, result.output
+    assert fake.get("email", "imap_password") == "my-app-pw"
+
+
+def test_secrets_get_redacts_by_default(monkeypatch):
+    fake = _FakeStore()
+    fake.set("llm", "openai_api_key", "sk-secret-value")
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: fake)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["secrets", "get", "llm.openai_api_key"])
+    assert result.exit_code == 0
+    assert "sk-secret-value" not in result.output
+    assert "REDACTED" in result.output
+
+
+def test_secrets_get_show_reveals_value(monkeypatch):
+    fake = _FakeStore()
+    fake.set("llm", "openai_api_key", "sk-real-value")
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: fake)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["secrets", "get", "llm.openai_api_key", "--show"])
+    assert result.exit_code == 0
+    assert "sk-real-value" in result.output
+
+
+def test_secrets_get_unset_returns_nonzero(monkeypatch):
+    fake = _FakeStore()
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: fake)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["secrets", "get", "llm.openai_api_key"])
+    assert result.exit_code == 2
+    assert "not set" in result.output.lower()
+
+
+def test_secrets_delete_removes_value(monkeypatch):
+    fake = _FakeStore()
+    fake.set("email", "imap_password", "hunter2")
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: fake)
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["secrets", "delete", "email.imap_password", "--yes"]
+    )
+    assert result.exit_code == 0
+    assert fake.get("email", "imap_password") is None
+
+
+def test_secrets_list_namespace(monkeypatch):
+    fake = _FakeStore()
+    fake.set("llm", "openai_api_key", "x")
+    fake.set("llm", "deepseek_api_key", "y")
+    fake.set("email", "imap_password", "z")
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: fake)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["secrets", "list", "llm"])
+    assert result.exit_code == 0
+    assert "openai_api_key" in result.output
+    assert "deepseek_api_key" in result.output
+    assert "imap_password" not in result.output
+
+
 # ── Sprint 19: chat slash-command helpers ──────────────────────────────────
 
 

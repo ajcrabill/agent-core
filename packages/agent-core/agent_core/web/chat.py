@@ -314,6 +314,7 @@ def chat_turn(request: Request, body: ChatTurnRequest) -> ChatTurnResponse:
         system_prompt=DEFAULT_SYSTEM_PROMPT,
         inject_obligations=body.inject_context and db is not None,
         inject_openbrain=body.inject_context and openbrain is not None,
+        session_id=f"web-{session_id}",
     )
     for msg in body.history:
         session.append(msg.get("role", "user"), msg.get("content", ""))

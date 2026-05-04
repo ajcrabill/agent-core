@@ -275,6 +275,163 @@ def serve(ctx, config_path, db_url, host, port, api_token, reload):
 # ── dcos-specific commands ────────────────────────────────────────────────
 
 
+@cli.command(name="remember")
+@click.argument("content", nargs=-1)
+@click.option(
+    "--source-kind",
+    default="manual",
+    show_default=True,
+    help="Provenance hint for filtering / dashboards later.",
+)
+@click.option(
+    "--source-uri",
+    default=None,
+    help="Where this came from — URL, file path, message ID, etc.",
+)
+@click.option(
+    "--source-title",
+    default=None,
+    help="Human-readable title (e.g., subject line, doc heading).",
+)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+)
+@click.option(
+    "--from-stdin",
+    is_flag=True,
+    help="Read content from stdin instead of CLI args. Useful for piping.",
+)
+def remember(
+    content,
+    source_kind,
+    source_uri,
+    source_title,
+    config_path,
+    db_url,
+    from_stdin,
+):
+    """Quick-capture a thought into OpenBrain.
+
+    The agent will surface this in future chats whose user message is
+    semantically related. Three input modes:
+
+    \b
+        dcos remember "Robyne prefers Tuesday meetings"
+        echo "long content..." | dcos remember --from-stdin
+        dcos remember "Charlotte SMS" --source-kind sms --source-uri 555-1234
+    """
+    import sys as _sys
+
+    from agent_core.openbrain import OpenBrainStore
+    from agent_core.settings import SettingsManager
+    from agent_core.state.db import Database
+
+    if from_stdin:
+        text = _sys.stdin.read().strip()
+    else:
+        text = " ".join(content).strip()
+
+    if not text:
+        console.print(
+            "[red]nothing to remember:[/red] pass content as args or --from-stdin"
+        )
+        raise click.exceptions.Exit(2)
+
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    if not db_url:
+        db_url = mgr.get("storage.url")
+    db = Database(db_url)
+    store = OpenBrainStore.from_settings(mgr.settings, db)
+
+    thought = store.capture(
+        text,
+        source_kind=source_kind,
+        source_uri=source_uri,
+        source_title=source_title,
+    )
+    console.print(f"[green]captured[/green] id={thought.id[:8]}…")
+    console.print(
+        f"[dim]source_kind={source_kind}{' uri='+source_uri if source_uri else ''}[/dim]"
+    )
+    if len(text) > 100:
+        console.print(f"[dim]content: {text[:100]}…[/dim]")
+    else:
+        console.print(f"[dim]content: {text}[/dim]")
+
+
+@cli.command(name="recall")
+@click.argument("query", nargs=-1, required=True)
+@click.option("--limit", default=5, type=int, show_default=True)
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+)
+def recall(query, limit, config_path, db_url):
+    """Semantic search across captured thoughts.
+
+    Pairs with `dcos remember`. Hits include similarity scores + source
+    provenance so you can trace each result.
+
+    \b
+        dcos remember "Robyne prefers Tuesday meetings"
+        dcos recall meetings with Robyne
+        # → finds the earlier capture
+    """
+    from agent_core.openbrain import OpenBrainStore
+    from agent_core.settings import SettingsManager
+    from agent_core.state.db import Database
+
+    text = " ".join(query).strip()
+    if not text:
+        console.print("[red]empty query[/red]")
+        raise click.exceptions.Exit(2)
+
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    if not db_url:
+        db_url = mgr.get("storage.url")
+    db = Database(db_url)
+    store = OpenBrainStore.from_settings(mgr.settings, db)
+
+    hits = store.search(text, limit=limit)
+    if not hits:
+        console.print("[dim]no hits[/dim]")
+        return
+
+    for i, h in enumerate(hits, start=1):
+        sim = round(h.similarity, 3)
+        src = h.sources[0] if h.sources else None
+        src_str = f" ({src.source_kind})" if src else ""
+        console.print(
+            f"[bold cyan]{i}.[/bold cyan] [dim]similarity={sim}{src_str}[/dim]"
+        )
+        snippet = h.thought.content[:300].replace("\n", " ")
+        console.print(f"   {snippet}")
+        console.print()
+
+
 @cli.command(name="chat")
 @click.option(
     "--config",
@@ -366,10 +523,13 @@ def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
             )
             raise click.exceptions.Exit(1) from e
 
+    import uuid as _uuid
+
     session = ChatSession(
         system_prompt=system_prompt or DEFAULT_SYSTEM_PROMPT,
         inject_obligations=not no_context and db is not None,
         inject_openbrain=not no_context and openbrain is not None,
+        session_id=f"cli-{_uuid.uuid4()}",
     )
 
     console.print(f"[dim]chatting with {provider_label}. Ctrl-D or /exit to quit.[/dim]")

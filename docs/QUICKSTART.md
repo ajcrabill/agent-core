@@ -100,8 +100,14 @@ Other interfaces:
 - `http://127.0.0.1:8765/docs` — Swagger UI for the full REST API
 - `dcos skills run email-triage --input '...'` — run individual skills
 - `dcos skills list / describe <name>` — what's registered
+- `dcos remember "<text>"` — quick-capture into semantic memory
+- `dcos recall <query>` — semantic search across captured thoughts
 
 Pass `--stub-llm` (CLI) or skip the LLM config entirely to run with canned-response stubs — useful for offline tests.
+
+## Memory across chats
+
+Every `dcos chat` turn auto-captures to OpenBrain (source_kind=`chat`). Future chats — even from different terminal sessions — surface relevant prior conversations via the same context-injection that surfaces vault notes. Turn it off with `--no-context` if you want a clean slate, or tag a session with `--system "fresh start"` etc.
 
 ## Day-to-day
 

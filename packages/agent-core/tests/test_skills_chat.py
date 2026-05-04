@@ -253,6 +253,9 @@ def test_run_turn_handles_openbrain_failure_gracefully() -> None:
         def search(self, *args, **kwargs):
             raise RuntimeError("storage went away")
 
+        def capture(self, *args, **kwargs):
+            raise RuntimeError("capture also broken")
+
     lm = StubLanguageModel(default="ok")
     session = ChatSession(inject_obligations=False, inject_openbrain=True)
     reply = run_turn(
@@ -262,3 +265,148 @@ def test_run_turn_handles_openbrain_failure_gracefully() -> None:
         openbrain=_BrokenStore(),
     )
     assert reply == "ok"  # turn completed despite openbrain failure
+
+
+# ── Cross-session memory (auto-capture to OpenBrain) ──────────────────────
+
+
+def test_run_turn_auto_captures_to_openbrain() -> None:
+    """Default behavior: each turn lands as a Thought with source_kind='chat'."""
+    db = _db()
+    store = OpenBrainStore(db, StubEmbeddingProvider())
+    lm = StubLanguageModel(default="agent reply text")
+    session = ChatSession(
+        inject_obligations=False,
+        inject_openbrain=False,  # avoid feedback loop in this test
+        session_id="test-session-abc",
+    )
+
+    run_turn(
+        user_message="ask about Q3 budget",
+        session=session,
+        language_model=lm,
+        db=db,
+        openbrain=store,
+    )
+
+    thoughts = store.recent(limit=10)
+    assert len(thoughts) == 1
+    t = thoughts[0]
+    assert "ask about Q3 budget" in t.content
+    assert "agent reply text" in t.content
+
+
+def test_run_turn_capture_includes_source_provenance() -> None:
+    """Captured chat turns get source_kind='chat' + source_uri=session_id
+    so they're filterable + groupable later."""
+    from sqlmodel import select
+
+    from agent_core.state.models import ThoughtSource
+
+    db = _db()
+    store = OpenBrainStore(db, StubEmbeddingProvider())
+    session = ChatSession(
+        inject_obligations=False,
+        inject_openbrain=False,
+        session_id="cli-12345",
+    )
+    run_turn(
+        user_message="hi",
+        session=session,
+        language_model=StubLanguageModel(default="hi back"),
+        db=db,
+        openbrain=store,
+    )
+
+    with db.session() as s:
+        sources = list(s.exec(select(ThoughtSource)).all())
+    assert len(sources) == 1
+    assert sources[0].source_kind == "chat"
+    assert sources[0].source_uri == "cli-12345"
+    assert sources[0].source_title == "chat turn"
+
+
+def test_run_turn_record_disabled_skips_capture() -> None:
+    """record_to_openbrain=False → no Thought lands in the store."""
+    db = _db()
+    store = OpenBrainStore(db, StubEmbeddingProvider())
+    session = ChatSession(
+        inject_obligations=False,
+        inject_openbrain=False,
+        record_to_openbrain=False,
+    )
+    run_turn(
+        user_message="don't remember this",
+        session=session,
+        language_model=StubLanguageModel(default="ok"),
+        db=db,
+        openbrain=store,
+    )
+    assert store.recent(limit=10) == []
+
+
+def test_run_turn_no_openbrain_no_capture() -> None:
+    """If openbrain=None, nothing's captured (and the turn doesn't crash)."""
+    session = ChatSession(record_to_openbrain=True)  # but no store passed
+    reply = run_turn(
+        user_message="x",
+        session=session,
+        language_model=StubLanguageModel(default="ok"),
+        openbrain=None,
+    )
+    assert reply == "ok"
+
+
+def test_run_turn_capture_failure_doesnt_break_turn() -> None:
+    """OpenBrain capture errors should be swallowed — never fail the turn."""
+
+    class _PartialStore:
+        """Search works, capture raises."""
+
+        def search(self, *args, **kwargs):
+            return []
+
+        def capture(self, *args, **kwargs):
+            raise RuntimeError("write failure")
+
+    session = ChatSession(inject_obligations=False)
+    reply = run_turn(
+        user_message="x",
+        session=session,
+        language_model=StubLanguageModel(default="ok"),
+        openbrain=_PartialStore(),
+    )
+    assert reply == "ok"  # turn succeeded despite capture failure
+
+
+def test_chat_memory_searchable_in_followup_turn() -> None:
+    """End-to-end: turn 1 captures to OpenBrain → turn 2's context-injection
+    surfaces it in the system prompt."""
+    from agent_core.openbrain.embeddings import SemanticStubProvider
+
+    db = _db()
+    # Use SemanticStub for content-aware similarity (StubEmbeddingProvider
+    # is hash-based; doesn't surface semantically-related content).
+    store = OpenBrainStore(db, SemanticStubProvider())
+    lm = StubLanguageModel(default="acknowledged")
+
+    s1 = ChatSession(inject_obligations=False, session_id="t1")
+    run_turn(
+        user_message="The Q3 budget gap is $500k",
+        session=s1,
+        language_model=lm,
+        openbrain=store,
+    )
+
+    # Different session, fresh history — should still find the prior turn
+    s2 = ChatSession(inject_obligations=False, session_id="t2", inject_openbrain=True)
+    run_turn(
+        user_message="What was that Q3 budget number?",
+        session=s2,
+        language_model=lm,
+        openbrain=store,
+    )
+
+    # The second turn's system prompt should include the prior conversation
+    second_call = lm.calls[-1]
+    assert "Q3 budget gap is $500k" in second_call["system"]

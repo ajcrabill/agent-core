@@ -38,8 +38,10 @@ class ChatMessage:
 class ChatSession:
     """A conversation. Holds the message history + context-injection settings.
 
-    Tracks the conversation in-memory only for v1 — persisting to the db
-    is a follow-up. The user can /reset to clear; /exit closes the REPL.
+    Cross-session memory comes from auto-capturing every turn into
+    OpenBrain. Future turns then surface relevant prior conversations
+    via the same context-injection that surfaces vault notes / emails.
+    The session itself stays in-memory; OpenBrain is the durable layer.
     """
 
     history: list[ChatMessage] = field(default_factory=list)
@@ -52,6 +54,15 @@ class ChatSession:
     """How many openbrain hits to include per turn."""
     obligation_limit: int = 10
     """How many active obligations to include."""
+    record_to_openbrain: bool = True
+    """If True (default), each completed turn captures the (user, agent)
+    exchange as a Thought with source_kind='chat'. Enables the agent to
+    remember conversations across sessions — search('what did we say
+    about X?') will surface prior chats."""
+    session_id: str | None = None
+    """Stable identifier for the conversation. Set when the chat starts
+    (CLI: per-process; HTTP: per-session). Used as the source_uri for
+    captured Thoughts so they're grouped + browsable later."""
 
     def append(self, role: str, content: str) -> None:
         self.history.append(ChatMessage(role=role, content=content))
@@ -177,6 +188,26 @@ def run_turn(
 
     session.append("user", user_message)
     session.append("assistant", reply)
+
+    # Cross-session memory: capture this turn into OpenBrain so future
+    # chats can recall it via semantic search. Failure here MUST NOT
+    # break the chat turn — log + swallow.
+    if session.record_to_openbrain and openbrain is not None:
+        try:
+            content = f"User: {user_message}\n\nAgent: {reply}"
+            openbrain.capture(
+                content,
+                source_kind="chat",
+                source_uri=session.session_id,
+                source_title="chat turn",
+                metadata={
+                    "session_id": session.session_id,
+                    "history_length_after": len(session.history),
+                },
+            )
+        except Exception as e:
+            logger.debug("chat-memory capture failed: %s", e)
+
     return reply
 
 

@@ -1,21 +1,29 @@
 # Quickstart
 
-Five commands to a working agent install. Tested on macOS 14+ with Python 3.11.
+Three commands to a running agent. Tested on macOS 14+ with Python 3.11.
 
-## Install
+## Prereqs (one-time)
 
 ```bash
-# Prereqs (one-time)
 brew install uv git
 # Optional: brew install node                                     # for OpenWebUI ObligationBoard plugin
 # Optional: brew install ollama && ollama pull nomic-embed-text   # for OpenBrain semantic search
 # Optional (ikb-agent only): brew install postgresql@16 && brew services start postgresql@16
+```
 
-# Clone + install
+If you're on a fresh macOS user account without Homebrew:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+eval "$(/opt/homebrew/bin/brew shellenv)" && echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
+```
+
+## Install
+
+```bash
 git clone https://github.com/ajcrabill/agent-core.git
 cd agent-core
 git submodule update --init --recursive       # OpenWebUI fork (skip if you don't need the chat UI)
-uv sync --all-extras                          # installs dcos-agent, ikb-agent, agent-core, dev deps
+uv sync                                       # installs everything (dcos / ikb / agent-core / dev deps)
 ```
 
 ## Pick your product
@@ -24,17 +32,19 @@ uv sync --all-extras                          # installs dcos-agent, ikb-agent, 
 
 **`ikb-agent`** — small-team intelligent knowledge base. PostgreSQL by default. Same install flow; replace `dcos` with `ikb` in every command below.
 
-## Bootstrap (run once)
+## Bootstrap (one command)
 
 ```bash
-uv run dcos setup --tier 1     # 3 questions: preset / display name / sqlite|postgres
-uv run dcos init               # creates schema + generates an API token (printed once)
-uv run dcos doctor             # health check; should report 5+ ok, 0 fail
+uv run dcos setup --tier 1
 ```
 
-After `init`, the **API token** prints once. Keep it — the OpenWebUI plugin needs it. You can recover it any time by re-running `dcos init` (idempotent; prints the existing token unless `--rotate-token` is passed).
+`setup` asks 3 questions, writes `agent.yml`, bootstraps the schema, generates an API token, and runs `doctor`. End-to-end in ~10 seconds.
 
-The token is stored in your OS keychain (macOS Keychain / GNOME Keyring / KWallet) by default. On headless systems it falls back to env vars; `dcos init` will tell you what to set.
+The **API token** prints during setup — keep it for the OpenWebUI plugin. You can recover it later: `uv run dcos init` is idempotent and prints the existing token (use `--rotate-token` to replace it).
+
+The token is stored in your OS keychain (macOS Keychain / GNOME Keyring / KWallet) by default. On headless systems it falls back to env vars; `init` will tell you what to set.
+
+Want the wizard without the chained init+doctor? `--no-init` and `--no-doctor` flags skip the tail steps.
 
 ## Day-to-day
 

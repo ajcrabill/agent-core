@@ -78,6 +78,18 @@ requires-dist = [
 name = "agent-core-workspace"
 version = "0.0.1"
 source = { virtual = "." }
+dependencies = [
+    { name = "agent-core", extra = ["dev"] },
+    { name = "dcos-agent" },
+    { name = "ikb-agent" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "agent-core", extras = ["dev"], editable = "packages/agent-core" },
+    { name = "dcos-agent", editable = "packages/dcos-agent" },
+    { name = "ikb-agent", editable = "packages/ikb-agent" },
+]
 
 [[package]]
 name = "alembic"

@@ -104,10 +104,46 @@ def test_setup_creates_config_dir(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     runner = CliRunner()
-    # Tier 1: 3 returns (preset default, empty name, sqlite default)
-    result = runner.invoke(cli, ["setup", "--tier", "1"], input="\n\n\n")
+    # Tier 1: 3 returns (preset default, empty name, sqlite default).
+    # --no-init avoids touching the real keychain in CI.
+    result = runner.invoke(
+        cli,
+        ["setup", "--tier", "1", "--no-init"],
+        input="\n\n\n",
+    )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "config" / "dcos-agent").exists()
+
+
+def test_setup_runs_init_and_doctor_by_default(monkeypatch, tmp_path: Path) -> None:
+    """Verify the new chained behavior: setup → init → doctor when no flags."""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    # Patch the secret store so we don't touch the real keychain in CI.
+    from agent_core.secrets import MemorySecretStore
+
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: MemorySecretStore())
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["setup", "--tier", "1"], input="\n\n\n")
+    assert result.exit_code == 0, result.output
+    # Init ran: schema-at-head message + token printed
+    assert "schema at head" in result.output
+    assert "API token" in result.output
+    # Doctor ran: at least one of its checks shows up
+    assert "agent doctor" in result.output
+
+
+def test_setup_no_init_skips_chained_steps(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["setup", "--tier", "1", "--no-init"], input="\n\n\n"
+    )
+    assert result.exit_code == 0, result.output
+    assert "schema at head" not in result.output
+    assert "agent doctor" not in result.output
 
 
 # ── Re-exports from agent-core ─────────────────────────────────────────────

@@ -170,11 +170,28 @@ def restore(ctx, source, db_url, settings_path, yes, skip_schema_check):
     default=lambda: default_settings_path(),
     show_default="dcos config dir",
 )
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+    show_default="dcos sqlite path",
+    help="SQLAlchemy URL forwarded to init (default: dcos XDG path).",
+)
+@click.option("--no-init", is_flag=True)
+@click.option("--no-doctor", is_flag=True)
 @click.pass_context
-def setup(ctx, tier, config_path):
-    """Run the interactive setup wizard."""
+def setup(ctx, tier, config_path, db_url, no_init, no_doctor):
+    """Interactive setup wizard. Runs init + doctor at the end by default."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    ctx.invoke(setup_command, tier=tier, config_path=config_path)
+    # Make sure the db dir exists so init's alembic upgrade can create the file.
+    default_db_path().parent.mkdir(parents=True, exist_ok=True)
+    ctx.invoke(
+        setup_command,
+        tier=tier,
+        config_path=config_path,
+        db_url=db_url,
+        no_init=no_init,
+        no_doctor=no_doctor,
+    )
 
 
 @cli.command(name="init")

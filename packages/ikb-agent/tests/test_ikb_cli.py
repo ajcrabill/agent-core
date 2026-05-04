@@ -120,8 +120,12 @@ def test_setup_creates_config_dir(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     runner = CliRunner()
-    # Tier 1: 3 returns. ikb defaults to balanced too.
-    result = runner.invoke(cli, ["setup", "--tier", "1"], input="\n\n\n")
+    # Tier 1: 3 returns. --no-init avoids needing a live postgres in CI.
+    result = runner.invoke(
+        cli,
+        ["setup", "--tier", "1", "--no-init"],
+        input="\n\n\n",
+    )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "config" / "ikb-agent").exists()
 

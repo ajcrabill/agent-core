@@ -9,8 +9,12 @@ requires-python = ">=3.11"
 # ikb) in editable mode. Without this, `uv sync` resolves the workspace
 # but installs nothing into the venv — `uv run dcos` then errors with
 # "Failed to spawn: dcos / No such file or directory".
+#
+# `agent-core[dev]` pulls pytest / ruff / mypy / httpx so a bare
+# `uv sync` from the repo root gives developers everything they need
+# (including the test runner) without remembering to pass --all-extras.
 dependencies = [
-    "agent-core",
+    "agent-core[dev]",
     "dcos-agent",
     "ikb-agent",
 ]

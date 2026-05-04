@@ -241,8 +241,36 @@ def restore_command(
     default=None,
     help="Where to write agent.yml (default: env or cwd).",
 )
-def setup_command(tier: int, config_path: Path | None) -> None:
-    """Interactive setup wizard. Three tiers — start with --tier=1."""
+@click.option(
+    "--no-init",
+    is_flag=True,
+    help="Skip the schema bootstrap + token generation that normally follow setup.",
+)
+@click.option(
+    "--no-doctor",
+    is_flag=True,
+    help="Skip the doctor health-check that normally follows init.",
+)
+@click.option(
+    "--db-url",
+    default=None,
+    help="SQLAlchemy URL for the agent database (passed to init).",
+)
+@click.pass_context
+def setup_command(
+    ctx: click.Context,
+    tier: int,
+    config_path: Path | None,
+    no_init: bool,
+    no_doctor: bool,
+    db_url: str | None,
+) -> None:
+    """Interactive setup wizard. Runs init + doctor at the end by default.
+
+    The full first-run flow is: ask 3 questions, write agent.yml, bootstrap
+    the schema, generate an API token, run health checks. Pass --no-init
+    or --no-doctor to skip those tail steps; useful in CI or when scripting
+    around the wizard."""
     try:
         result = SetupWizard().run(tier=tier)  # type: ignore[arg-type]
     except WizardValidationError as e:
@@ -250,13 +278,28 @@ def setup_command(tier: int, config_path: Path | None) -> None:
         sys.exit(1)
 
     target = config_path or SettingsManager().path
+    target.parent.mkdir(parents=True, exist_ok=True)
     result.commit(target)
     console.print(f"[green]wrote settings to[/green] {target}")
     if result.overrides.get("__display_name"):
         console.print(
-            f"[dim]display name {result.overrides['__display_name']!r} captured for the caller "
-            "(identity bootstrap is a separate command).[/dim]"
+            f"[dim]display name {result.overrides['__display_name']!r} captured.[/dim]"
         )
+
+    if no_init:
+        console.print(
+            "[dim]skipped init (--no-init). Run [cyan]init[/cyan] manually before [cyan]serve[/cyan].[/dim]"
+        )
+        return
+
+    console.print()
+    ctx.invoke(init_command, config_path=target, db_url=db_url, rotate_token=False)
+
+    if no_doctor:
+        return
+
+    console.print()
+    ctx.invoke(doctor_command, config_path=target, db_url=db_url, as_json=False)
 
 
 # ── init: bootstrap schema + generate API token ──────────────────────────

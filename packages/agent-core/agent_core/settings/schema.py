@@ -542,6 +542,88 @@ class LLMSettings(BaseModel):
     )
 
 
+# ── Email (inbound IMAP) ────────────────────────────────────────────────────
+
+
+class EmailIMAPSettings(BaseModel):
+    """IMAP fetch configuration. Used by the email-fetch path that turns
+    inbound mail into obligations the triage step then classifies.
+
+    Auth: a password/app-password held in the secrets store under namespace
+    ``email`` keyed by ``password_secret_key`` (default ``imap_password``).
+    Set it via ``dcos secrets set email.imap_password=<value>`` or env var
+    ``AGENTCORE_EMAIL_IMAP_PASSWORD=<value>``.
+
+    Gmail users: enable 2FA, generate an "app password" at
+    https://myaccount.google.com/apppasswords, and use that as the password
+    (Gmail blocks plain-password IMAP login). Host=imap.gmail.com,
+    port=993, ssl=true.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=False,
+        description="Master switch. While False, no fetch ever runs.",
+    )
+    host: str = Field(
+        default="",
+        description="IMAP server hostname (e.g., imap.gmail.com, imap.fastmail.com).",
+    )
+    port: int = Field(
+        default=993,
+        ge=1,
+        le=65535,
+        description="IMAP port. 993 for SSL, 143 for STARTTLS / plaintext.",
+    )
+    ssl: bool = Field(
+        default=True,
+        description="Use IMAPS (SSL) on connect. Set False for STARTTLS / plaintext (rare).",
+    )
+    username: str = Field(
+        default="",
+        description="IMAP username, usually the full email address.",
+    )
+    password_secret_key: str = Field(
+        default="imap_password",
+        description=(
+            "Key under secrets namespace 'email' that holds the IMAP "
+            "password / app-password. Look up the value, don't store it here."
+        ),
+    )
+    folder: str = Field(
+        default="INBOX",
+        description="IMAP folder to fetch from. Most users want INBOX.",
+    )
+    mark_read: bool = Field(
+        default=False,
+        description=(
+            "Mark fetched messages as \\Seen on the server. Default False "
+            "so the user can still see new mail in their phone client; "
+            "set True if the agent should be the source of truth."
+        ),
+    )
+    fetch_limit: int = Field(
+        default=50,
+        ge=1,
+        description="Max messages to fetch per call (back-pressure).",
+    )
+    timeout_seconds: float = Field(
+        default=30.0,
+        gt=0.0,
+        description="Per-IMAP-operation timeout.",
+    )
+
+
+class EmailSettings(BaseModel):
+    """Email integration root. Today: IMAP inbound; Gmail OAuth + SMTP
+    outbound coming in later sprints."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    imap: EmailIMAPSettings = Field(default_factory=EmailIMAPSettings)
+
+
 # ── Root ────────────────────────────────────────────────────────────────────
 
 
@@ -564,6 +646,7 @@ class AgentSettings(BaseModel):
     work: WorkSettings = Field(default_factory=WorkSettings)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
+    email: EmailSettings = Field(default_factory=EmailSettings)
 
 
 __all__ = [

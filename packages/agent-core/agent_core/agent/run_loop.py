@@ -73,6 +73,10 @@ class TickReport:
     digest_delivery_attempted: bool = False
     digest_delivery_sent: bool = False
     digest_delivery_reason: str | None = None
+    # Sprint 21: IMAP email ingestion
+    email_fetched: int = 0
+    email_captured: int = 0
+    email_skipped_duplicate: int = 0
 
 
 # ── Single tick ────────────────────────────────────────────────────────────
@@ -89,6 +93,7 @@ def run_tick(
     triage_limit: int = 20,
     tick_number: int = 0,
     digest_delivery_enabled: bool = True,
+    email_fetch_enabled: bool = True,
 ) -> TickReport:
     """One iteration of the autonomous loop.
 
@@ -180,6 +185,41 @@ def run_tick(
                 errors.append(f"notify {item.obligation.id[:8]}: {e}")
                 dropped += 1
 
+    # 2.5. Pull new email from IMAP into inbox-status obligations. Runs
+    # BEFORE triage so the same tick that fetches a new message also
+    # classifies it. Skipped silently when email.imap.enabled is False
+    # — that's the default, so this is a no-op for users who haven't
+    # turned IMAP on.
+    email_fetched = 0
+    email_captured = 0
+    email_skipped_duplicate = 0
+    if email_fetch_enabled and getattr(settings_obj.email.imap, "enabled", False):
+        try:
+            from agent_core.secrets import default_store
+            from agent_core.work.email_fetch import (
+                EmailFetchError,
+                EmailFetcher,
+                fetch_and_capture,
+            )
+
+            fetcher = EmailFetcher.from_settings(settings_obj, default_store())
+            fetch_report = fetch_and_capture(
+                fetcher=fetcher,
+                db=db,
+                limit=settings_obj.email.imap.fetch_limit,
+            )
+            email_fetched = fetch_report.fetched
+            email_captured = fetch_report.captured
+            email_skipped_duplicate = fetch_report.skipped_duplicate
+            errors.extend(fetch_report.errors)
+        except EmailFetchError as e:
+            # Configuration error (missing host / password / etc) —
+            # surface but don't break the tick.
+            errors.append(f"email fetch skipped: {e}")
+        except Exception as e:
+            logger.exception("email fetch failed (tick %d)", tick_number)
+            errors.append(f"email fetch: {e}")
+
     # 3. Triage inbox-status email obligations.
     triage_report: TriageReport | None = None
     if triage_enabled:
@@ -236,6 +276,9 @@ def run_tick(
         digest_delivery_attempted=digest_attempted,
         digest_delivery_sent=digest_sent,
         digest_delivery_reason=digest_reason,
+        email_fetched=email_fetched,
+        email_captured=email_captured,
+        email_skipped_duplicate=email_skipped_duplicate,
     )
 
 
@@ -531,6 +574,11 @@ def _default_on_tick(report: TickReport) -> None:
     )
     if report.notifications_dropped:
         summary += f" ({report.notifications_dropped} dropped)"
+    if report.email_captured or report.email_skipped_duplicate:
+        summary += (
+            f"; email: {report.email_captured} captured"
+            + (f", {report.email_skipped_duplicate} dup" if report.email_skipped_duplicate else "")
+        )
     if report.triage and report.triage.triaged:
         actions = ", ".join(
             f"{k}={v}" for k, v in sorted(report.triage.by_action.items())

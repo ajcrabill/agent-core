@@ -25,6 +25,8 @@ from agent_core.settings.presets import PRESETS, apply_preset, list_presets
 from agent_core.settings.schema import (
     AgentSettings,
     AutonomySettings,
+    EmailIMAPSettings,
+    EmailSettings,
     LLMSettings,
     LearningSettings,
     MeshSettings,
@@ -40,6 +42,8 @@ __all__ = [
     "PRESETS",
     "AgentSettings",
     "AutonomySettings",
+    "EmailIMAPSettings",
+    "EmailSettings",
     "LLMSettings",
     "LearningSettings",
     "MeshSettings",

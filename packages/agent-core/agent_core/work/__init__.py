@@ -16,6 +16,13 @@ Three submodules in this sprint:
 Cron watchdog lands when scheduling lands (later sprint).
 """
 
+from agent_core.work.email_fetch import (
+    EmailFetchError,
+    EmailFetcher,
+    FetchedEmail,
+    FetchReport,
+    fetch_and_capture,
+)
 from agent_core.work.inbound import InboundCapture
 from agent_core.work.incidents import IncidentRecorder
 from agent_core.work.pipeline_monitor import (
@@ -25,9 +32,14 @@ from agent_core.work.pipeline_monitor import (
 )
 
 __all__ = [
+    "EmailFetchError",
+    "EmailFetcher",
+    "FetchReport",
+    "FetchedEmail",
     "InboundCapture",
     "IncidentRecorder",
     "PipelineMonitor",
     "StalledObligation",
     "StalledScanResult",
+    "fetch_and_capture",
 ]

@@ -504,6 +504,82 @@ def digest(config_path, db_url, hours, as_json, send, respect_cadence, respect_f
     click.echo(d.as_markdown())
 
 
+@cli.group(name="email")
+def email_group() -> None:
+    """Email integration — IMAP inbound today, Gmail OAuth + SMTP later."""
+
+
+@email_group.command(name="pull")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="Max messages to fetch this run. Defaults to settings.email.imap.fetch_limit.",
+)
+def email_pull(config_path, db_url, limit):
+    """Pull unread email from IMAP into the obligation board.
+
+    Each message becomes an inbox-status, inbound_email-source obligation,
+    deduplicated by Message-ID so re-runs don't double-capture. The next
+    `dcos run` tick (or chat /triage) will classify them via the
+    email-triage skill.
+
+    \b
+    First-time setup:
+      1. dcos settings set email.imap.host=imap.gmail.com
+      2. dcos settings set email.imap.username=you@example.com
+      3. dcos secrets set email.imap_password=<app-password>   (Gmail: 2FA + app password)
+      4. dcos settings set email.imap.enabled=true
+      5. dcos email pull
+    """
+    from agent_core.secrets import default_store
+    from agent_core.settings import SettingsManager
+    from agent_core.state.db import Database
+    from agent_core.work.email_fetch import EmailFetchError, EmailFetcher, fetch_and_capture
+
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    if not db_url:
+        db_url = mgr.get("storage.url")
+    db = Database(db_url)
+
+    try:
+        fetcher = EmailFetcher.from_settings(mgr.settings, default_store())
+    except EmailFetchError as e:
+        console.print(f"[red]email fetch not configured:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    effective_limit = limit if limit is not None else mgr.settings.email.imap.fetch_limit
+    console.print(
+        f"[dim]connecting to {fetcher.host}:{fetcher.port} as {fetcher.username}…[/dim]"
+    )
+    report = fetch_and_capture(fetcher=fetcher, db=db, limit=effective_limit)
+
+    console.print(
+        f"[green]fetched[/green] {report.fetched}, "
+        f"[cyan]captured[/cyan] {report.captured}, "
+        f"[dim]skipped {report.skipped_duplicate} duplicate[/dim]"
+    )
+    for err in report.errors:
+        console.print(f"[red]error:[/red] {err}")
+    if report.errors:
+        raise click.exceptions.Exit(1)
+
+
 @cli.command(name="remember")
 @click.argument("content", nargs=-1)
 @click.option(

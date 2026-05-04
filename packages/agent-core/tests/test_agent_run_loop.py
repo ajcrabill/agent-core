@@ -611,3 +611,115 @@ def test_run_tick_digest_skipped_empty_when_no_activity():
     assert report.digest_delivery_attempted
     assert not report.digest_delivery_sent
     assert report.digest_delivery_reason == "skipped_empty"
+
+
+# ── Sprint 21: email fetch wiring ──────────────────────────────────────────
+
+
+def test_run_tick_skips_email_fetch_when_imap_disabled():
+    """Default settings have email.imap.enabled=False — tick should not
+    even try to construct an EmailFetcher."""
+    db = _db()
+    settings = AgentSettings()
+    assert settings.email.imap.enabled is False
+    report = run_tick(db=db, settings=settings, digest_delivery_enabled=False)
+    assert report.email_fetched == 0
+    assert report.email_captured == 0
+    assert report.errors == []
+
+
+def test_run_tick_records_email_fetch_error_when_misconfigured(monkeypatch):
+    """email.imap.enabled=True but missing host/password → EmailFetchError
+    surfaced in errors, no crash."""
+    db = _db()
+    settings = AgentSettings()
+    settings.email.imap.enabled = True  # but host is empty
+
+    report = run_tick(
+        db=db,
+        settings=settings,
+        digest_delivery_enabled=False,
+    )
+    assert report.email_fetched == 0
+    assert any("email fetch skipped" in e for e in report.errors)
+
+
+def test_run_tick_calls_fetch_and_capture_when_enabled(monkeypatch):
+    """When email is configured + secrets present, run_tick fires the
+    fetcher and the counts make it into TickReport."""
+    db = _db()
+    settings = AgentSettings()
+    settings.email.imap.enabled = True
+    settings.email.imap.host = "imap.example.com"
+    settings.email.imap.username = "u@example.com"
+
+    # Stub the secrets store
+    class _Secrets:
+        def get(self, ns, key):
+            return "secret-pw" if (ns, key) == ("email", "imap_password") else None
+
+    monkeypatch.setattr(
+        "agent_core.secrets.default_store", lambda: _Secrets()
+    )
+
+    # Stub fetch_and_capture so we don't actually network
+    captured_args = {}
+
+    def _fake_fetch_and_capture(*, fetcher, db, limit):
+        captured_args["fetcher"] = fetcher
+        captured_args["limit"] = limit
+        from agent_core.work.email_fetch import FetchReport
+
+        return FetchReport(fetched=3, captured=2, skipped_duplicate=1, errors=[])
+
+    monkeypatch.setattr(
+        "agent_core.work.email_fetch.fetch_and_capture", _fake_fetch_and_capture
+    )
+
+    report = run_tick(
+        db=db,
+        settings=settings,
+        digest_delivery_enabled=False,
+    )
+    assert report.email_fetched == 3
+    assert report.email_captured == 2
+    assert report.email_skipped_duplicate == 1
+    assert captured_args["fetcher"].host == "imap.example.com"
+
+
+def test_run_tick_email_fetch_disabled_via_kwarg(monkeypatch):
+    """Even with imap.enabled=True, the kwarg lets callers (tests, etc)
+    skip the fetch step explicitly."""
+    db = _db()
+    settings = AgentSettings()
+    settings.email.imap.enabled = True
+    settings.email.imap.host = "imap.example.com"
+    settings.email.imap.username = "u@example.com"
+
+    class _Secrets:
+        def get(self, ns, key):
+            return "secret-pw"
+
+    monkeypatch.setattr(
+        "agent_core.secrets.default_store", lambda: _Secrets()
+    )
+    # If our shim were called, it'd succeed — so we can verify it WASN'T
+    # called by counting.
+    call_count = {"n": 0}
+
+    def _fake_fetch_and_capture(*, fetcher, db, limit):
+        call_count["n"] += 1
+        from agent_core.work.email_fetch import FetchReport
+
+        return FetchReport()
+
+    monkeypatch.setattr(
+        "agent_core.work.email_fetch.fetch_and_capture", _fake_fetch_and_capture
+    )
+    run_tick(
+        db=db,
+        settings=settings,
+        digest_delivery_enabled=False,
+        email_fetch_enabled=False,
+    )
+    assert call_count["n"] == 0

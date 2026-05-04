@@ -333,14 +333,50 @@ API_TOKEN_KEY = "web.api_token"
     is_flag=True,
     help="Force-generate a new API token even if one already exists.",
 )
+@click.option(
+    "--llm-provider",
+    type=click.Choice(["stub", "openai_compat", "ollama"]),
+    default=None,
+    help="Configure the LLM provider in one shot. Writes settings.llm.provider.",
+)
+@click.option(
+    "--llm-base-url",
+    default=None,
+    help="LLM endpoint URL (only used with --llm-provider). Common values: "
+    "https://api.openai.com/v1, https://api.deepseek.com/v1, "
+    "http://localhost:11434/v1 (Ollama).",
+)
+@click.option(
+    "--llm-model",
+    default=None,
+    help="Model name (only used with --llm-provider).",
+)
+@click.option(
+    "--llm-api-key",
+    default=None,
+    help=(
+        "API key for the LLM (stored in the secrets store under llm/<key>). "
+        "Read from stdin if value is '-'."
+    ),
+)
 def init_command(
-    config_path: Path | None, db_url: str | None, rotate_token: bool
+    config_path: Path | None,
+    db_url: str | None,
+    rotate_token: bool,
+    llm_provider: str | None,
+    llm_base_url: str | None,
+    llm_model: str | None,
+    llm_api_key: str | None,
 ) -> None:
     """Bootstrap a fresh install: create the schema + generate an API token.
 
-    Run this AFTER ``setup`` and BEFORE ``serve``. Idempotent — calling
-    twice on an already-initialized install is safe (schema is a no-op
-    when present; token rotation is opt-in via ``--rotate-token``).
+    Optionally configures the LLM provider in the same step (so a single
+    ``init --llm-provider openai_compat --llm-api-key sk-...`` lands a
+    fully-configured install).
+
+    Idempotent — calling twice on an already-initialized install is safe
+    (schema is a no-op when present; token rotation is opt-in via
+    ``--rotate-token``).
     """
     import secrets as _secrets
 
@@ -391,8 +427,23 @@ def init_command(
     console.print()
     console.print("[bold]API token (paste into your OpenWebUI plugin):[/bold]")
     console.print(f"  {token}")
+
+    # Optional one-shot LLM configuration. We do this AFTER the token write
+    # so a partial failure here doesn't leave the install token-less.
+    if llm_provider is not None:
+        _configure_llm(
+            mgr=mgr,
+            store=store,
+            provider=llm_provider,
+            base_url=llm_base_url,
+            model=llm_model,
+            api_key=llm_api_key,
+        )
+
     console.print()
-    console.print("[dim]next:[/dim] run [cyan]doctor[/cyan] to verify, then [cyan]serve[/cyan] to start the API.")
+    console.print(
+        "[dim]next:[/dim] run [cyan]doctor[/cyan] to verify, then [cyan]serve[/cyan] to start the API."
+    )
 
 
 # ── Group ───────────────────────────────────────────────────────────────────
@@ -411,6 +462,70 @@ ops_group.add_command(init_command)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
+
+
+def _configure_llm(
+    *,
+    mgr: SettingsManager,
+    store,
+    provider: str,
+    base_url: str | None,
+    model: str | None,
+    api_key: str | None,
+) -> None:
+    """Land an LLM config in one call: writes settings.llm.* + stores the
+    API key under namespace 'llm'. Used by ``init --llm-provider``.
+
+    Resolves sensible defaults per provider so a bare
+    ``--llm-provider openai_compat --llm-api-key sk-...`` is enough.
+    """
+    # Provider-aware defaults
+    if provider == "ollama":
+        default_base_url = "http://localhost:11434/v1"
+        default_model = "llama3.2"
+        default_key_name = "ollama_api_key"
+    elif provider == "openai_compat":
+        default_base_url = "https://api.openai.com/v1"
+        default_model = "gpt-4o-mini"
+        default_key_name = "openai_api_key"
+    else:  # stub
+        default_base_url = "https://api.openai.com/v1"
+        default_model = "stub"
+        default_key_name = "openai_api_key"
+
+    base_url = base_url or default_base_url
+    model = model or default_model
+
+    # Save on every call — each set() re-reads the file fresh, so
+    # save=False would discard prior values when the next call reads.
+    mgr.set("llm.provider", provider)
+    mgr.set("llm.base_url", base_url)
+    mgr.set("llm.model", model)
+    mgr.set("llm.api_key_secret_key", default_key_name)
+
+    # Read api key from stdin if "-"
+    if api_key == "-":
+        import sys as _sys
+
+        api_key = _sys.stdin.read().strip()
+
+    if api_key:
+        try:
+            store.set("llm", default_key_name, api_key)
+            console.print(
+                f"[green]LLM configured[/green] provider={provider} model={model}"
+            )
+        except Exception as e:
+            console.print(f"[yellow]LLM key not stored:[/yellow] {e}")
+            console.print(
+                f"  set manually: [cyan]AGENTCORE_LLM_{default_key_name.upper()}=...[/cyan]"
+            )
+    else:
+        console.print(
+            f"[yellow]LLM provider={provider} configured but no API key set.[/yellow] "
+            f"Pass [cyan]--llm-api-key sk-...[/cyan] or set "
+            f"[cyan]AGENTCORE_LLM_{default_key_name.upper()}=...[/cyan]"
+        )
 
 
 def _alembic_upgrade_head(db_url: str) -> None:

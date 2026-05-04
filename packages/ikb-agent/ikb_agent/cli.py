@@ -187,10 +187,36 @@ def setup(ctx, tier, config_path, db_url, no_init, no_doctor):
     show_default="env IKB_DB_URL or local socket",
 )
 @click.option("--rotate-token", is_flag=True, help="Generate a new API token even if one exists.")
+@click.option(
+    "--llm-provider",
+    type=click.Choice(["stub", "openai_compat", "ollama"]),
+    default=None,
+)
+@click.option("--llm-base-url", default=None)
+@click.option("--llm-model", default=None)
+@click.option("--llm-api-key", default=None)
 @click.pass_context
-def init(ctx, config_path, db_url, rotate_token):
+def init(
+    ctx,
+    config_path,
+    db_url,
+    rotate_token,
+    llm_provider,
+    llm_base_url,
+    llm_model,
+    llm_api_key,
+):
     """Bootstrap the schema + generate an API token. Run after `setup`."""
-    ctx.invoke(init_command, config_path=config_path, db_url=db_url, rotate_token=rotate_token)
+    ctx.invoke(
+        init_command,
+        config_path=config_path,
+        db_url=db_url,
+        rotate_token=rotate_token,
+        llm_provider=llm_provider,
+        llm_base_url=llm_base_url,
+        llm_model=llm_model,
+        llm_api_key=llm_api_key,
+    )
 
 
 @cli.command(name="serve")

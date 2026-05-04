@@ -42,9 +42,23 @@ uv run dcos setup --tier 1
 
 The **API token** prints during setup — keep it for the OpenWebUI plugin. You can recover it later: `uv run dcos init` is idempotent and prints the existing token (use `--rotate-token` to replace it).
 
-The token is stored in your OS keychain (macOS Keychain / GNOME Keyring / KWallet) by default. On headless systems it falls back to env vars; `init` will tell you what to set.
+The token is stored in your OS keychain (macOS Keychain / Windows Credential Locker / Linux Secret Service). On headless Linux installs (VPS, Docker), it falls back to a local file at `~/.local/state/agent-core/secrets.json` (mode 0600).
 
 Want the wizard without the chained init+doctor? `--no-init` and `--no-doctor` flags skip the tail steps.
+
+## Wire up an LLM (one command)
+
+```bash
+# OpenAI (or any OpenAI-compatible — DeepSeek, Mistral, OpenRouter, …):
+uv run dcos init --llm-provider openai_compat --llm-api-key "$OPENAI_API_KEY"
+
+# Local Ollama (no API key needed):
+uv run dcos init --llm-provider ollama --llm-model llama3.2
+```
+
+After this, `uv run dcos skills run email-triage --input '{"sender":"...","subject":"...","body":"..."}'` returns a real classification (not stub JSON). The config goes into `agent.yml`, the API key into the secrets store. Pass `--stub-llm` to force the canned-response path for offline tests.
+
+Skip the `--llm-*` flags entirely and skills run with deterministic stubs — useful for verifying wiring without LLM cost.
 
 ## Day-to-day
 

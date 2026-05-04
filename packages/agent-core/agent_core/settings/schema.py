@@ -459,6 +459,89 @@ class RuntimeSettings(BaseModel):
     )
 
 
+# ── LLM (skills + plan + step + audit) ─────────────────────────────────────
+
+
+LLMProvider = Literal["stub", "openai_compat", "ollama"]
+
+
+class LLMSettings(BaseModel):
+    """Where the agent's intelligence comes from.
+
+    Two providers ship today:
+      * **openai_compat** — any OpenAI-compatible chat-completions endpoint
+        (OpenAI, OpenRouter, DeepSeek, Mistral, Together, Groq, Fireworks,
+        local llama.cpp servers, Anthropic via OpenRouter). The default
+        choice for production.
+      * **ollama** — local Ollama instance. Same wire format as openai_compat
+        but with Ollama-friendly defaults (base_url, no api_key, smaller
+        models).
+      * **stub** — deterministic canned responses. Default until the user
+        configures a real provider; what tests use.
+
+    Real API keys live in the secrets store, not here. ``api_key_secret_key``
+    is the secrets-store *key name* under namespace ``llm``. So::
+
+        llm:
+          provider: openai_compat
+          base_url: https://api.openai.com/v1
+          model: gpt-4o-mini
+          api_key_secret_key: openai_api_key
+
+    means "look up agent_core.secrets[``llm``][``openai_api_key``] for the
+    actual ``Authorization: Bearer …`` value". Set it via::
+
+        agent settings llm api-key set <provider>      # interactive prompt
+
+    or env var ``AGENTCORE_LLM_OPENAI_API_KEY=sk-...``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: LLMProvider = Field(
+        default="stub",
+        description="Which LanguageModel implementation to wire into SkillContext.",
+    )
+    base_url: str = Field(
+        default="https://api.openai.com/v1",
+        description=(
+            "OpenAI-compatible endpoint. Common values: "
+            "https://api.openai.com/v1, "
+            "https://openrouter.ai/api/v1, "
+            "https://api.deepseek.com/v1, "
+            "http://localhost:11434/v1 (Ollama)."
+        ),
+    )
+    model: str = Field(
+        default="gpt-4o-mini",
+        description="Model name passed to /chat/completions.",
+    )
+    api_key_secret_key: str = Field(
+        default="openai_api_key",
+        description=(
+            "Key under secrets namespace 'llm' that holds the bearer token. "
+            "Leave default for OpenAI/OpenRouter; switch to 'deepseek_api_key' "
+            "etc. when configuring multiple providers."
+        ),
+    )
+    max_tokens: int = Field(
+        default=2048,
+        ge=1,
+        description="Default ceiling for model output tokens.",
+    )
+    temperature: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=2.0,
+        description="Default sampling temperature.",
+    )
+    timeout_seconds: float = Field(
+        default=60.0,
+        gt=0.0,
+        description="HTTP timeout for LLM calls.",
+    )
+
+
 # ── Root ────────────────────────────────────────────────────────────────────
 
 
@@ -480,6 +563,7 @@ class AgentSettings(BaseModel):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     work: WorkSettings = Field(default_factory=WorkSettings)
     runtime: RuntimeSettings = Field(default_factory=RuntimeSettings)
+    llm: LLMSettings = Field(default_factory=LLMSettings)
 
 
 __all__ = [
@@ -487,6 +571,8 @@ __all__ = [
     "AutonomySettings",
     "DetectorStrictness",
     "EmbeddingProviderName",
+    "LLMProvider",
+    "LLMSettings",
     "LearningSettings",
     "MeshSettings",
     "MeshTransport",

@@ -208,11 +208,37 @@ def setup(ctx, tier, config_path, db_url, no_init, no_doctor):
     show_default="dcos sqlite path",
 )
 @click.option("--rotate-token", is_flag=True, help="Generate a new API token even if one exists.")
+@click.option(
+    "--llm-provider",
+    type=click.Choice(["stub", "openai_compat", "ollama"]),
+    default=None,
+)
+@click.option("--llm-base-url", default=None)
+@click.option("--llm-model", default=None)
+@click.option("--llm-api-key", default=None)
 @click.pass_context
-def init(ctx, config_path, db_url, rotate_token):
+def init(
+    ctx,
+    config_path,
+    db_url,
+    rotate_token,
+    llm_provider,
+    llm_base_url,
+    llm_model,
+    llm_api_key,
+):
     """Bootstrap the schema + generate an API token. Run after `setup`."""
     default_db_path().parent.mkdir(parents=True, exist_ok=True)
-    ctx.invoke(init_command, config_path=config_path, db_url=db_url, rotate_token=rotate_token)
+    ctx.invoke(
+        init_command,
+        config_path=config_path,
+        db_url=db_url,
+        rotate_token=rotate_token,
+        llm_provider=llm_provider,
+        llm_base_url=llm_base_url,
+        llm_model=llm_model,
+        llm_api_key=llm_api_key,
+    )
 
 
 @cli.command(name="serve")
@@ -374,21 +400,23 @@ def skills_run(
 ) -> None:
     """Invoke a registered skill with INPUT JSON. Prints the result.
 
-    Today's behavior: uses StubLanguageModel by default (skills that need
-    an LLM run with canned responses; useful for end-to-end wiring smoke).
-    Pass --no-stub-llm once Hermes vendoring lands and a real LanguageModel
-    is wired into the SkillContext.
+    Default LLM is whatever ``settings.llm.provider`` says — stub for
+    fresh installs, openai_compat / ollama once configured. Pass
+    ``--stub-llm`` to force the smart-stub even when a real LLM is
+    configured (useful for offline wiring smoke).
     """
     import json
     import sys as _sys
 
     from agent_core.openbrain import OpenBrainStore
+    from agent_core.secrets import default_store
     from agent_core.settings import SettingsManager
     from agent_core.skills import (
+        LanguageModelError,
         SkillContext,
         SkillRunner,
-        StubLanguageModel,
         default_registry,
+        language_model_from_settings,
     )
     from agent_core.state.db import Database
 
@@ -413,26 +441,37 @@ def skills_run(
     resolved_url = db_url or mgr.get("storage.url")
     db = Database(resolved_url) if resolved_url else None
 
-    # Build context. Stub LLM is the only option until Hermes vendoring
-    # lands — but we make it smart enough that wiring smokes succeed:
-    # pattern-match the skill's system prompt and return plausible canned
-    # JSON / structured text so each shipped skill produces valid output.
+    # Build the LanguageModel. ``--stub-llm`` forces the smart stub
+    # regardless of settings; otherwise we honor whatever's configured.
+    if stub_llm:
+        lm = _smart_stub_lm()
+    else:
+        try:
+            lm = language_model_from_settings(mgr.settings, default_store())
+        except LanguageModelError as e:
+            console.print(f"[red]LLM not configured:[/red] {e}")
+            console.print(
+                "[dim]Hint: pass --stub-llm to run with canned responses, "
+                "or `dcos init --llm-provider openai_compat --llm-api-key sk-...`.[/dim]"
+            )
+            raise click.exceptions.Exit(1) from e
+        # If settings says provider=stub (fresh install default), make it
+        # smart so the shipped skills still work for the wiring smoke.
+        if getattr(mgr.settings.llm, "provider", "stub") == "stub":
+            lm = _smart_stub_lm()
+
     openbrain = (
         OpenBrainStore.from_settings(mgr.settings, db) if db else None
     )
     ctx = SkillContext(
         settings=mgr.settings,
         db=db,
-        language_model=_smart_stub_lm(),
+        language_model=lm,
         openbrain=openbrain,
     )
 
     runner = SkillRunner(default_registry)
     outcome = runner.run(name, payload, ctx)
-
-    # Convenience: also recognize ``stub_llm`` flag at the CLI level even
-    # though we always currently use a stub. Once Hermes lands, gate.
-    _ = stub_llm
 
     if not outcome.succeeded:
         console.print(f"[red]skill failed:[/red] {outcome.error}")

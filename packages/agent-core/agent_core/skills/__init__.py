@@ -30,6 +30,11 @@ Skill design rules:
 """
 
 from agent_core.skills.context import SkillContext, SkillResult
+from agent_core.skills.openai_compat import (
+    LanguageModelError,
+    OpenAICompatLanguageModel,
+    language_model_from_settings,
+)
 from agent_core.skills.protocol import LanguageModel, SeedRule, Skill
 from agent_core.skills.registry import SkillRegistry, default_registry
 from agent_core.skills.runner import (
@@ -43,6 +48,8 @@ from agent_core.skills.stubs import StubLanguageModel
 
 __all__ = [
     "LanguageModel",
+    "LanguageModelError",
+    "OpenAICompatLanguageModel",
     "RunOutcome",
     "SeedRule",
     "Skill",
@@ -55,4 +62,5 @@ __all__ = [
     "SkillRunner",
     "StubLanguageModel",
     "default_registry",
+    "language_model_from_settings",
 ]

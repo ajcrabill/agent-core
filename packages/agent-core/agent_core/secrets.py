@@ -32,8 +32,10 @@ Namespacing convention:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
@@ -195,14 +197,97 @@ class KeyringSecretStore:
         return sorted(self._known.get(namespace, set()))
 
 
+# ── File-backed (writable Linux/headless fallback) ──────────────────────────
+
+
+class FileSecretStore:
+    """JSON-file backend at ``~/.local/state/agent-core/secrets.json``.
+
+    Used when no usable OS keychain is available — typical for headless
+    VPS installs (Hostinger, DigitalOcean, etc.) without Secret Service /
+    GNOME Keyring. Writable, unlike EnvSecretStore.
+
+    Format::
+
+        {
+          "namespace1": {"key1": "value1", "key2": "value2"},
+          ...
+        }
+
+    Atomic writes via tempfile + os.replace + chmod 0600. Honors
+    ``AGENTCORE_SECRETS_PATH`` env var for non-default locations.
+    """
+
+    DEFAULT_PATH = Path.home() / ".local" / "state" / "agent-core" / "secrets.json"
+
+    def __init__(self, path: Path | None = None) -> None:
+        env_path = os.environ.get("AGENTCORE_SECRETS_PATH")
+        self.path = path or (Path(env_path) if env_path else self.DEFAULT_PATH)
+
+    def _read(self) -> dict[str, dict[str, str]]:
+        if not self.path.exists():
+            return {}
+        try:
+            return json.loads(self.path.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning("secrets file unreadable at %s: %s", self.path, e)
+            return {}
+
+    def _write(self, data: dict[str, dict[str, str]]) -> None:
+        import tempfile
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=self.path.parent,
+            prefix=self.path.name + ".",
+            suffix=".tmp",
+            delete=False,
+        ) as tmp:
+            json.dump(data, tmp, indent=2, sort_keys=True)
+            tmp_path = Path(tmp.name)
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, self.path)
+
+    def get(self, namespace: str, key: str) -> str | None:
+        return self._read().get(namespace, {}).get(key)
+
+    def set(self, namespace: str, key: str, value: str) -> None:
+        data = self._read()
+        data.setdefault(namespace, {})[key] = value
+        self._write(data)
+
+    def delete(self, namespace: str, key: str) -> None:
+        data = self._read()
+        ns = data.get(namespace, {})
+        if key in ns:
+            del ns[key]
+            if not ns:
+                del data[namespace]
+            self._write(data)
+
+    def list(self, namespace: str) -> list[str]:
+        return sorted(self._read().get(namespace, {}).keys())
+
+
 # ── Default selection ────────────────────────────────────────────────────────
 
 
 def default_store() -> SecretStore:
     """Return the right backend for this environment.
 
-    Tries KeyringSecretStore; falls back to EnvSecretStore on systems where
-    keyring can't initialize (e.g., headless Linux without Secret Service).
+    Resolution order:
+      1. ``KeyringSecretStore`` — OS keychain (macOS Keychain / Windows
+         Credential Locker / Linux with Secret Service running).
+      2. ``FileSecretStore`` — writable JSON file at
+         ``~/.local/state/agent-core/secrets.json`` (mode 0600). Default
+         on headless Linux installs.
+      3. ``EnvSecretStore`` — read-only fallback; only if neither of the
+         above is usable.
+
+    The file fallback was added in Sprint 15g — Linux VPS installs were
+    silently falling all the way through to ``EnvSecretStore`` (read-only),
+    making ``dcos init`` unable to persist API tokens.
     """
     try:
         import keyring
@@ -210,18 +295,19 @@ def default_store() -> SecretStore:
 
         kr = keyring.get_keyring()
         if isinstance(kr, FailKeyring):
-            logger.warning(
-                "no usable OS keychain found; falling back to EnvSecretStore "
-                "(set AGENTCORE_<NAMESPACE>_<KEY> env vars to configure secrets)"
+            logger.info(
+                "no usable OS keychain; using FileSecretStore at %s",
+                FileSecretStore.DEFAULT_PATH,
             )
-            return EnvSecretStore()
+            return FileSecretStore()
         return KeyringSecretStore()
     except ImportError:
-        return EnvSecretStore()
+        return FileSecretStore()
 
 
 __all__ = [
     "EnvSecretStore",
+    "FileSecretStore",
     "KeyringSecretStore",
     "MemorySecretStore",
     "SecretNotWritableError",

@@ -102,6 +102,7 @@ Other interfaces:
 - `dcos skills list / describe <name>` — what's registered
 - `dcos remember "<text>"` — quick-capture into semantic memory
 - `dcos recall <query>` — semantic search across captured thoughts
+- `dcos run [--interval 300]` — autonomous tick loop (scans for stalled obligations + notifies)
 
 Pass `--stub-llm` (CLI) or skip the LLM config entirely to run with canned-response stubs — useful for offline tests.
 

@@ -275,6 +275,86 @@ def serve(ctx, config_path, db_url, host, port, api_token, reload):
 # ── dcos-specific commands ────────────────────────────────────────────────
 
 
+@cli.command(name="run")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+)
+@click.option(
+    "--interval",
+    type=int,
+    default=300,
+    show_default=True,
+    help="Seconds between ticks. Default 5 minutes.",
+)
+@click.option(
+    "--once",
+    is_flag=True,
+    help="Run a single tick + exit. Useful for cron / CI / debugging.",
+)
+def run(config_path, db_url, interval, once):
+    """Periodic agent loop. Scans for stalled obligations + notifies.
+
+    Foreground process — Ctrl-C to stop. Designed to run as a
+    long-lived process (launchd unit on macOS, systemd --user unit on
+    Linux). Each tick:
+
+    \b
+      1. Scans the obligation board for stalled items (per
+         settings.work.pipeline_*_threshold_hours).
+      2. Opens an Incident row for any newly-stalled obligation
+         (idempotent — won't re-open already-flagged ones).
+      3. Sends a notification per the configured NotificationSettings.
+
+    Pair with `dcos serve` (HTTP API) — they're independent, run them
+    in separate terminals.
+    """
+    from agent_core.agent.run_loop import run_loop
+    from agent_core.notifications import NotificationDispatcher
+    from agent_core.settings import SettingsManager
+    from agent_core.state.db import Database
+
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    if not db_url:
+        db_url = mgr.get("storage.url")
+    db = Database(db_url)
+
+    try:
+        dispatcher = NotificationDispatcher.from_settings(mgr.settings)
+    except Exception as e:
+        console.print(f"[yellow]notifications disabled:[/yellow] {e}")
+        dispatcher = None
+
+    if once:
+        console.print("[dim]running one tick (--once)…[/dim]")
+    else:
+        console.print(
+            f"[dim]agent loop running (every {interval}s). Ctrl-C to stop.[/dim]"
+        )
+
+    tick_count = run_loop(
+        db=db,
+        settings=mgr,
+        dispatcher=dispatcher,
+        interval_seconds=interval,
+        once=once,
+    )
+
+    if not once:
+        console.print(f"[dim]ran {tick_count} ticks. bye.[/dim]")
+
+
 @cli.command(name="remember")
 @click.argument("content", nargs=-1)
 @click.option(

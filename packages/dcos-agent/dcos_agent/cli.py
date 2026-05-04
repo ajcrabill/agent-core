@@ -275,6 +275,155 @@ def serve(ctx, config_path, db_url, host, port, api_token, reload):
 # ── dcos-specific commands ────────────────────────────────────────────────
 
 
+@cli.command(name="chat")
+@click.option(
+    "--config",
+    "config_path",
+    type=click.Path(path_type=Path),
+    default=lambda: default_settings_path(),
+    show_default="dcos config dir",
+)
+@click.option(
+    "--db-url",
+    default=lambda: default_db_url(),
+    show_default="dcos sqlite path",
+)
+@click.option(
+    "--no-context",
+    is_flag=True,
+    help="Don't inject obligations + openbrain hits into the system prompt.",
+)
+@click.option(
+    "--system",
+    "system_prompt",
+    default=None,
+    help="Override the default system prompt.",
+)
+@click.option(
+    "--max-tokens",
+    default=2048,
+    type=int,
+    show_default=True,
+    help="Per-turn ceiling for the model's output length.",
+)
+@click.option(
+    "--stub-llm",
+    is_flag=True,
+    help="Force the smart stub even when a real LLM is configured.",
+)
+def chat(config_path, db_url, no_context, system_prompt, max_tokens, stub_llm):
+    """Talk to your agent in a CLI REPL.
+
+    Loads the configured LLM (per ``settings.llm.provider``), opens a
+    conversation, and injects active obligations + relevant openbrain
+    hits into each turn's system prompt by default. Type ``/exit`` or
+    Ctrl-D to leave.
+
+    Quick LLM setup if you haven't yet::
+
+        dcos init --llm-provider openai_compat --llm-api-key "$OPENAI_API_KEY"
+
+    Or for free local chat::
+
+        dcos init --llm-provider ollama --llm-model llama3.2
+    """
+    from agent_core.openbrain import OpenBrainStore
+    from agent_core.secrets import default_store
+    from agent_core.settings import SettingsManager
+    from agent_core.skills import (
+        DEFAULT_SYSTEM_PROMPT,
+        ChatSession,
+        LanguageModelError,
+        language_model_from_settings,
+        run_turn,
+    )
+    from agent_core.state.db import Database
+
+    try:
+        mgr = SettingsManager(path=config_path)
+    except Exception as e:
+        console.print(f"[red]could not load settings:[/red] {e}")
+        raise click.exceptions.Exit(1) from e
+
+    db = Database(db_url) if db_url else None
+    openbrain = OpenBrainStore.from_settings(mgr.settings, db) if db else None
+
+    if stub_llm:
+        lm = _smart_stub_lm()
+        provider_label = "stub-llm (forced)"
+    else:
+        try:
+            lm = language_model_from_settings(mgr.settings, default_store())
+            provider_label = (
+                f"{mgr.settings.llm.provider} / {mgr.settings.llm.model}"
+            )
+        except LanguageModelError as e:
+            console.print(f"[red]LLM not configured:[/red] {e}")
+            console.print(
+                "[dim]Run [cyan]dcos init --llm-provider openai_compat "
+                "--llm-api-key sk-...[/cyan] (or --llm-provider ollama for "
+                "local), or use [cyan]--stub-llm[/cyan].[/dim]"
+            )
+            raise click.exceptions.Exit(1) from e
+
+    session = ChatSession(
+        system_prompt=system_prompt or DEFAULT_SYSTEM_PROMPT,
+        inject_obligations=not no_context and db is not None,
+        inject_openbrain=not no_context and openbrain is not None,
+    )
+
+    console.print(f"[dim]chatting with {provider_label}. Ctrl-D or /exit to quit.[/dim]")
+    console.print(
+        "[dim]Slash commands: /reset (clear history), /context (toggle injection), /exit.[/dim]"
+    )
+    console.print()
+
+    while True:
+        try:
+            line = click.prompt("you", prompt_suffix="> ", default="", show_default=False)
+        except (EOFError, click.exceptions.Abort):
+            console.print("\n[dim]bye[/dim]")
+            break
+        text = line.strip()
+        if not text:
+            continue
+        if text in ("/exit", "/quit"):
+            console.print("[dim]bye[/dim]")
+            break
+        if text == "/reset":
+            session.reset()
+            console.print("[dim]history cleared[/dim]")
+            continue
+        if text == "/context":
+            session.inject_obligations = not session.inject_obligations
+            session.inject_openbrain = not session.inject_openbrain
+            state = "ON" if session.inject_obligations else "OFF"
+            console.print(f"[dim]context injection: {state}[/dim]")
+            continue
+        if text.startswith("/"):
+            console.print(f"[yellow]unknown command:[/yellow] {text}")
+            continue
+
+        try:
+            reply = run_turn(
+                user_message=text,
+                session=session,
+                language_model=lm,
+                db=db,
+                openbrain=openbrain,
+                max_tokens=max_tokens,
+            )
+        except LanguageModelError as e:
+            console.print(f"[red]LLM error:[/red] {e}")
+            continue
+        except KeyboardInterrupt:
+            console.print("\n[dim](interrupted)[/dim]")
+            continue
+
+        console.print(f"[bold cyan]agent:[/bold cyan] {reply}")
+        console.print()
+
+
 @cli.command(name="info")
 def info() -> None:
     """Show resolved dcos paths + version. Useful in bug reports."""

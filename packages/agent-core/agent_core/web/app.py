@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from agent_core.openbrain import OpenBrainStore
 from agent_core.state.db import Database
 from agent_core.web import auth as auth_module
+from agent_core.web.chat import router as chat_router
 from agent_core.web.health import router as health_router
 from agent_core.web.obligations import router as obligations_router
 from agent_core.web.openbrain import router as openbrain_router
@@ -91,6 +92,7 @@ def create_app(
     app.include_router(obligations_router)
     app.include_router(openbrain_router)
     app.include_router(settings_router)
+    app.include_router(chat_router)
 
     return app
 

@@ -29,6 +29,13 @@ Skill design rules:
       caller can show provenance.
 """
 
+from agent_core.skills.chat import (
+    DEFAULT_SYSTEM_PROMPT,
+    ChatMessage,
+    ChatSession,
+    build_context_prompt,
+    run_turn,
+)
 from agent_core.skills.context import SkillContext, SkillResult
 from agent_core.skills.openai_compat import (
     LanguageModelError,
@@ -47,6 +54,9 @@ from agent_core.skills.runner import (
 from agent_core.skills.stubs import StubLanguageModel
 
 __all__ = [
+    "DEFAULT_SYSTEM_PROMPT",
+    "ChatMessage",
+    "ChatSession",
     "LanguageModel",
     "LanguageModelError",
     "OpenAICompatLanguageModel",
@@ -61,6 +71,8 @@ __all__ = [
     "SkillResult",
     "SkillRunner",
     "StubLanguageModel",
+    "build_context_prompt",
     "default_registry",
     "language_model_from_settings",
+    "run_turn",
 ]

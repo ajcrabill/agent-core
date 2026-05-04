@@ -56,9 +56,35 @@ uv run dcos init --llm-provider openai_compat --llm-api-key "$OPENAI_API_KEY"
 uv run dcos init --llm-provider ollama --llm-model llama3.2
 ```
 
-After this, `uv run dcos skills run email-triage --input '{"sender":"...","subject":"...","body":"..."}'` returns a real classification (not stub JSON). The config goes into `agent.yml`, the API key into the secrets store. Pass `--stub-llm` to force the canned-response path for offline tests.
+After this, the agent has a brain. The config goes into `agent.yml`, the API key into the secrets store.
 
-Skip the `--llm-*` flags entirely and skills run with deterministic stubs — useful for verifying wiring without LLM cost.
+## Talk to your agent
+
+Two paths once the LLM is configured:
+
+**Terminal REPL:**
+```bash
+uv run dcos chat
+# you> what's on my plate today?
+# agent: ...
+# you> /exit
+```
+
+Auto-injects your active obligations + relevant openbrain hits into each turn. Slash commands: `/reset`, `/context` (toggle injection), `/exit`.
+
+**Browser:**
+```bash
+uv run dcos serve            # http://127.0.0.1:8765
+```
+
+Then open **http://127.0.0.1:8765/chat** — vanilla HTML chat UI, no Node, no build step. Paste your bearer token once (auto-saved to localStorage), then chat. Same context-injection logic as the CLI.
+
+Other interfaces:
+- `http://127.0.0.1:8765/docs` — Swagger UI for the full REST API
+- `dcos skills run email-triage --input '...'` — run individual skills
+- `dcos skills list / describe <name>` — what's registered
+
+Pass `--stub-llm` (CLI) or skip the LLM config entirely to run with canned-response stubs — useful for offline tests.
 
 ## Day-to-day
 

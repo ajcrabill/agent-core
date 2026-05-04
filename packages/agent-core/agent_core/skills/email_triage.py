@@ -132,10 +132,15 @@ class EmailTriage:
             f"\n"
             f"{input.body}"
         )
+        # Triage decisions are tiny (~30 tokens of JSON) but modern
+        # reasoning models (gemma3/4, qwen3, deepseek-r1, o-series) need
+        # significant budget to "think" before they answer. 800 tokens
+        # leaves room for a chain-of-thought to reach a final answer
+        # without burning much budget on real-world non-reasoning models.
         raw = context.language_model.complete(  # type: ignore[attr-defined]
             system=_SYSTEM_PROMPT,
             user=user_prompt,
-            max_tokens=200,
+            max_tokens=800,
             temperature=0.0,
         )
         parsed = _parse_response(raw)
@@ -182,11 +187,21 @@ class EmailTriage:
 
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+# Match the LAST balanced-looking {...} block in a string. Reasoning
+# models often embed the final JSON answer at the end of a long thinking
+# trace; we want that, not whatever JSON they considered earlier.
+_JSON_OBJECT = re.compile(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", re.DOTALL)
 
 
 def _parse_response(raw: str) -> dict:
-    """Parse the LLM's JSON response. Handles bare JSON or fenced JSON
-    (model occasionally wraps in ```json``` despite instruction)."""
+    """Parse the LLM's JSON response. Handles:
+
+      - Bare JSON (the common, fast path)
+      - Fenced JSON (```json``` blocks)
+      - JSON embedded in a longer reasoning trace (last balanced {...})
+        — surfaced when the LM wrapper's fallback returns a reasoning
+        field instead of empty content.
+    """
     raw = raw.strip()
     if not raw:
         raise ValueError("email-triage: empty model response")
@@ -198,7 +213,21 @@ def _parse_response(raw: str) -> dict:
     # Fenced fallback
     m = _JSON_FENCE.search(raw)
     if m:
-        return json.loads(m.group(1))
+        try:
+            return json.loads(m.group(1))
+        except json.JSONDecodeError:
+            pass
+    # Embedded-JSON fallback: scan for the LAST balanced {...} block.
+    # Reasoning traces from qwen3 / gemma4 / deepseek-r1 typically end
+    # with something like "Final answer: {...}" — we want the {...}.
+    matches = _JSON_OBJECT.findall(raw)
+    for candidate in reversed(matches):
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict) and "action" in parsed:
+                return parsed
+        except json.JSONDecodeError:
+            continue
     raise ValueError(f"email-triage: could not parse JSON from response: {raw!r}")
 
 

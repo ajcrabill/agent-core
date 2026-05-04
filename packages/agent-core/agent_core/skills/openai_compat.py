@@ -79,24 +79,35 @@ class OpenAICompatLanguageModel:
         user: str,
         max_tokens: int | None = None,
         temperature: float | None = None,
+        _retry_count: int = 0,
     ) -> str:
         """Send a chat-completions request, return the model's text reply.
 
         Raises ``LanguageModelError`` on any failure — network, status,
         empty content, malformed JSON. Skills decide whether to retry.
+
+        Reasoning-model handling: Ollama-hosted models like qwen3 and
+        gemma3/4 emit a custom ``reasoning`` field with their thinking
+        and leave ``content`` empty until they reach a final answer.
+        With too-small max_tokens, the answer never lands. We auto-
+        retry once with double the budget when finish_reason='length'
+        and content is empty. After that, if content is still empty
+        but reasoning is present, we return the reasoning as a
+        best-effort fallback (better than crashing the caller).
         """
         url = f"{self.base_url.rstrip('/')}/chat/completions"
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
+        effective_max_tokens = max_tokens or self.default_max_tokens
         payload = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "max_tokens": max_tokens or self.default_max_tokens,
+            "max_tokens": effective_max_tokens,
             "temperature": (
                 temperature if temperature is not None else self.default_temperature
             ),
@@ -127,18 +138,60 @@ class OpenAICompatLanguageModel:
             ) from e
 
         try:
-            content = data["choices"][0]["message"]["content"]
+            choice = data["choices"][0]
+            message = choice["message"]
         except (KeyError, IndexError, TypeError) as e:
             raise LanguageModelError(
                 f"unexpected response shape from {self.base_url}: {data}"
             ) from e
 
-        if not isinstance(content, str):
-            raise LanguageModelError(
-                f"expected string content, got {type(content).__name__}: {content!r}"
+        content = message.get("content")
+        finish_reason = choice.get("finish_reason")
+        reasoning = message.get("reasoning")
+
+        # Reasoning-model retry: empty content + truncated by length →
+        # the model was still thinking when we cut it off. Retry once
+        # with 2x the budget. Cap retries so a degenerate model can't
+        # exhaust the timeout.
+        if (
+            (not content or not isinstance(content, str))
+            and finish_reason == "length"
+            and _retry_count < 1
+        ):
+            logger.info(
+                "%s returned empty content with finish=length; "
+                "retrying with %d max_tokens",
+                self.base_url,
+                effective_max_tokens * 2,
+            )
+            return self.complete(
+                system=system,
+                user=user,
+                max_tokens=effective_max_tokens * 2,
+                temperature=temperature,
+                _retry_count=_retry_count + 1,
             )
 
-        return content
+        if isinstance(content, str) and content:
+            return content
+
+        # Best-effort fallback: if a reasoning model returned only its
+        # thinking trace, surface that. The skill's parser may extract a
+        # JSON payload from it; otherwise the caller will fail more
+        # gracefully than a "no content" panic.
+        if isinstance(reasoning, str) and reasoning:
+            logger.warning(
+                "%s returned empty content; falling back to reasoning field "
+                "(%d chars)",
+                self.base_url,
+                len(reasoning),
+            )
+            return reasoning
+
+        raise LanguageModelError(
+            f"empty content from {self.base_url} (finish={finish_reason!r}, "
+            f"model={self.model!r}); try a higher max_tokens or a different model"
+        )
 
     # ── Tool-use (Sprint 24) ───────────────────────────────────────────────
 

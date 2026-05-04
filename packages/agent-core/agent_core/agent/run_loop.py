@@ -77,6 +77,9 @@ class TickReport:
     email_fetched: int = 0
     email_captured: int = 0
     email_skipped_duplicate: int = 0
+    # Sprint 22: draft composition (sending stays manual / explicit)
+    drafts_composed: int = 0
+    drafts_skipped_already_drafted: int = 0
 
 
 # ── Single tick ────────────────────────────────────────────────────────────
@@ -94,6 +97,7 @@ def run_tick(
     tick_number: int = 0,
     digest_delivery_enabled: bool = True,
     email_fetch_enabled: bool = True,
+    compose_enabled: bool = True,
 ) -> TickReport:
     """One iteration of the autonomous loop.
 
@@ -231,6 +235,28 @@ def run_tick(
         )
         errors.extend(triage_report.errors)
 
+    # 3.5. Draft replies for triaged-as-draft emails. Gated by
+    # settings.email.auto_compose so the agent doesn't burn LLM tokens
+    # drafting every reply unsolicited. Sends NEVER happen here — drafts
+    # only. The user reviews + sends explicitly via CLI / chat.
+    drafts_composed = 0
+    drafts_skipped = 0
+    if compose_enabled and getattr(settings_obj.email, "auto_compose", False):
+        try:
+            from agent_core.work.email_send import compose_drafts
+
+            compose_report = compose_drafts(
+                db=db,
+                settings=settings,
+                language_model=language_model,
+            )
+            drafts_composed = compose_report.drafted
+            drafts_skipped = compose_report.skipped_already_drafted
+            errors.extend(compose_report.errors)
+        except Exception as e:
+            logger.exception("compose_drafts failed (tick %d)", tick_number)
+            errors.append(f"compose: {e}")
+
     # 4. Cadenced digest delivery. Each tick checks "is it time?" — the
     # delivery helper short-circuits with skipped_too_recent if not. The
     # period is settings.notifications.digest_period_hours (default 24).
@@ -279,6 +305,8 @@ def run_tick(
         email_fetched=email_fetched,
         email_captured=email_captured,
         email_skipped_duplicate=email_skipped_duplicate,
+        drafts_composed=drafts_composed,
+        drafts_skipped_already_drafted=drafts_skipped,
     )
 
 
@@ -584,6 +612,8 @@ def _default_on_tick(report: TickReport) -> None:
             f"{k}={v}" for k, v in sorted(report.triage.by_action.items())
         )
         summary += f"; triaged {report.triage.triaged} ({actions})"
+    if report.drafts_composed:
+        summary += f"; drafted {report.drafts_composed}"
     if report.digest_delivery_attempted:
         if report.digest_delivery_sent:
             summary += "; digest sent"

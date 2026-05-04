@@ -615,13 +615,88 @@ class EmailIMAPSettings(BaseModel):
     )
 
 
+class EmailSMTPSettings(BaseModel):
+    """SMTP send configuration. Used to ship drafted replies back out
+    after the user approves them.
+
+    Auth: a password/app-password held in the secrets store under namespace
+    ``email`` keyed by ``password_secret_key`` (default ``smtp_password``).
+    Set it via ``dcos secrets set email.smtp_password=<value>``.
+
+    Gmail users: the same app password works for SMTP. Host=smtp.gmail.com,
+    port=587, starttls=true (or port=465, ssl=true). Set
+    ``from_address`` to your Gmail address.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = Field(
+        default=False,
+        description="Master switch. While False, no send ever happens.",
+    )
+    host: str = Field(
+        default="",
+        description="SMTP server hostname (e.g., smtp.gmail.com).",
+    )
+    port: int = Field(
+        default=587,
+        ge=1,
+        le=65535,
+        description="SMTP port. 587 for STARTTLS, 465 for SMTPS, 25 for plaintext (rare).",
+    )
+    ssl: bool = Field(
+        default=False,
+        description="Use SMTPS (SSL) on connect (port 465). Mutually exclusive with starttls.",
+    )
+    starttls: bool = Field(
+        default=True,
+        description="Upgrade to TLS via STARTTLS after connect (port 587). Most common.",
+    )
+    username: str = Field(
+        default="",
+        description="SMTP username, usually the same as your IMAP username.",
+    )
+    password_secret_key: str = Field(
+        default="smtp_password",
+        description=(
+            "Key under secrets namespace 'email' that holds the SMTP "
+            "password / app-password. For Gmail, the same app password "
+            "works for both IMAP and SMTP — feel free to point this at "
+            "'imap_password'."
+        ),
+    )
+    from_address: str = Field(
+        default="",
+        description="Address that appears in the From: header (usually your IMAP username).",
+    )
+    from_name: str = Field(
+        default="",
+        description="Optional display name (e.g., 'AJ Crabill'). Empty = bare address.",
+    )
+    timeout_seconds: float = Field(
+        default=30.0,
+        gt=0.0,
+        description="Per-SMTP-operation timeout.",
+    )
+
+
 class EmailSettings(BaseModel):
-    """Email integration root. Today: IMAP inbound; Gmail OAuth + SMTP
-    outbound coming in later sprints."""
+    """Email integration root: IMAP inbound + SMTP outbound."""
 
     model_config = ConfigDict(extra="forbid")
 
     imap: EmailIMAPSettings = Field(default_factory=EmailIMAPSettings)
+    smtp: EmailSMTPSettings = Field(default_factory=EmailSMTPSettings)
+    auto_compose: bool = Field(
+        default=False,
+        description=(
+            "When True, the autonomous tick runs email-composer on every "
+            "triaged-as-draft email obligation. Drafts wait for approval — "
+            "sending always requires explicit user action (CLI or chat). "
+            "Default False so the agent doesn't burn LLM tokens drafting "
+            "replies the user might never want."
+        ),
+    )
 
 
 # ── Root ────────────────────────────────────────────────────────────────────

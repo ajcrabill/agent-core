@@ -23,6 +23,14 @@ from agent_core.work.email_fetch import (
     FetchReport,
     fetch_and_capture,
 )
+from agent_core.work.email_send import (
+    ComposeReport,
+    EmailSender,
+    EmailSendError,
+    SendReport,
+    compose_drafts,
+    send_draft,
+)
 from agent_core.work.inbound import InboundCapture
 from agent_core.work.incidents import IncidentRecorder
 from agent_core.work.pipeline_monitor import (
@@ -32,14 +40,20 @@ from agent_core.work.pipeline_monitor import (
 )
 
 __all__ = [
+    "ComposeReport",
     "EmailFetchError",
     "EmailFetcher",
+    "EmailSendError",
+    "EmailSender",
     "FetchReport",
     "FetchedEmail",
     "InboundCapture",
     "IncidentRecorder",
     "PipelineMonitor",
+    "SendReport",
     "StalledObligation",
     "StalledScanResult",
+    "compose_drafts",
     "fetch_and_capture",
+    "send_draft",
 ]

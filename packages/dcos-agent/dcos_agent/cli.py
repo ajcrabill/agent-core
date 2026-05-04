@@ -34,6 +34,7 @@ from agent_core.ops.cli import (
     restore_command,
     setup_command,
 )
+from agent_core.ops.secrets_cli import secrets_group
 from agent_core.settings.cli import settings_group
 from agent_core.web.cli import serve_command
 
@@ -70,6 +71,9 @@ def cli() -> None:
 
 # settings: full agent-core surface, mounted under `dcos settings`
 cli.add_command(settings_group, name="settings")
+
+# secrets: shared keychain/file-fallback CLI
+cli.add_command(secrets_group, name="secrets")
 
 # migrate: one-shot data conversions into backup-format JSON
 cli.add_command(migrate_group, name="migrate")
@@ -191,6 +195,13 @@ def setup(ctx, tier, config_path, db_url, no_init, no_doctor):
         db_url=db_url,
         no_init=no_init,
         no_doctor=no_doctor,
+        # dcos is sqlite-by-default; offer the dcos sqlite path for either
+        # backend choice. Postgres-curious dcos users can `dcos settings
+        # set storage.url=...` afterwards.
+        default_db_urls={
+            "sqlite": default_db_url(),
+            "postgres": default_db_url(),
+        },
     )
 
 
@@ -998,163 +1009,6 @@ def email_pull(config_path, db_url, limit):
         console.print(f"[red]error:[/red] {err}")
     if report.errors:
         raise click.exceptions.Exit(1)
-
-
-@cli.group(name="secrets")
-def secrets_group() -> None:
-    """Manage secrets (API keys, IMAP passwords, etc).
-
-    Backed by the OS keychain on macOS / Windows / Linux-with-Secret-Service,
-    or a 0600-mode JSON file at ~/.local/state/agent-core/secrets.json on
-    headless Linux. Same store agent-core uses internally.
-
-    Secrets live under namespaces — common ones:
-
-    \b
-      llm.openai_api_key       OpenAI / OpenAI-compat bearer
-      llm.deepseek_api_key     DeepSeek bearer
-      email.imap_password      IMAP / Gmail app password
-      agent_core.web.api_token API token for /chat + plugins (managed by `dcos init`)
-    """
-
-
-def _split_secret_path(dotted: str) -> tuple[str, str]:
-    """Split ``namespace.key`` into (namespace, key). Reject invalid forms."""
-    if "." not in dotted:
-        raise click.UsageError(
-            f"expected '<namespace>.<key>', got {dotted!r}. "
-            "Examples: llm.openai_api_key, email.imap_password"
-        )
-    namespace, key = dotted.split(".", 1)
-    if not namespace or not key:
-        raise click.UsageError(
-            f"both namespace and key are required, got {dotted!r}"
-        )
-    return namespace, key
-
-
-@secrets_group.command(name="set")
-@click.argument("assignment", required=False, default=None)
-@click.option(
-    "--from-stdin",
-    is_flag=True,
-    help="Read the value from stdin instead of the assignment / interactive prompt. "
-    "Useful for piping: `cat token | dcos secrets set --from-stdin llm.openai_api_key`.",
-)
-def secrets_set(assignment, from_stdin):
-    """Store a secret in the OS keychain (or file fallback).
-
-    \b
-    Three input modes:
-      dcos secrets set llm.openai_api_key=sk-...      # one-shot (visible in shell history)
-      dcos secrets set llm.openai_api_key             # interactive prompt (recommended)
-      cat token | dcos secrets set --from-stdin email.imap_password
-    """
-    import sys
-    from agent_core.secrets import default_store
-
-    if assignment is None:
-        raise click.UsageError(
-            "specify the secret as `<namespace>.<key>[=<value>]`. "
-            "See `dcos secrets set --help` for input modes."
-        )
-
-    if "=" in assignment:
-        dotted, value = assignment.split("=", 1)
-    elif from_stdin:
-        dotted = assignment
-        value = sys.stdin.read().strip()
-        if not value:
-            console.print("[red]stdin was empty; no secret set.[/red]")
-            raise click.exceptions.Exit(1)
-    else:
-        dotted = assignment
-        value = click.prompt(
-            f"value for {dotted}",
-            hide_input=True,
-            confirmation_prompt=True,
-        )
-
-    namespace, key = _split_secret_path(dotted)
-    store = default_store()
-    store.set(namespace, key, value)
-    console.print(f"[green]✓[/green] stored {namespace}.{key} ([dim]{type(store).__name__}[/dim])")
-
-
-@secrets_group.command(name="get")
-@click.argument("dotted")
-@click.option(
-    "--show",
-    is_flag=True,
-    help="Print the actual value. Default redacts to [REDACTED] for terminal-history safety.",
-)
-def secrets_get(dotted, show):
-    """Look up a secret. Redacted by default — pass --show to reveal."""
-    from agent_core.secrets import default_store
-
-    namespace, key = _split_secret_path(dotted)
-    store = default_store()
-    value = store.get(namespace, key)
-    if value is None:
-        console.print(f"[yellow]not set:[/yellow] {namespace}.{key}")
-        raise click.exceptions.Exit(2)
-    if show:
-        click.echo(value)
-    else:
-        console.print(f"{namespace}.{key} = [dim][REDACTED, len={len(value)}][/dim]")
-
-
-@secrets_group.command(name="delete")
-@click.argument("dotted")
-@click.option("--yes", is_flag=True, help="Skip confirmation.")
-def secrets_delete(dotted, yes):
-    """Remove a secret from the store. Cannot be undone."""
-    from agent_core.secrets import default_store
-
-    namespace, key = _split_secret_path(dotted)
-    if not yes:
-        if not click.confirm(f"delete {namespace}.{key}?"):
-            console.print("[dim]aborted[/dim]")
-            return
-    store = default_store()
-    store.delete(namespace, key)
-    console.print(f"[green]✓[/green] deleted {namespace}.{key}")
-
-
-@secrets_group.command(name="list")
-@click.argument("namespace", required=False, default=None)
-def secrets_list(namespace):
-    """List secret keys under a namespace (no values).
-
-    \b
-      dcos secrets list                # show all known namespaces with key counts
-      dcos secrets list llm            # list keys under 'llm'
-    """
-    from agent_core.secrets import default_store
-
-    store = default_store()
-    if namespace:
-        keys = store.list(namespace)
-        if not keys:
-            console.print(f"[dim]no keys under namespace {namespace!r}[/dim]")
-            return
-        for k in sorted(keys):
-            console.print(f"  {namespace}.{k}")
-        return
-
-    # No namespace given — probe a few well-known ones.
-    known = ["llm", "email", "agent_core"]
-    table = Table(title=f"secrets ({type(store).__name__})")
-    table.add_column("namespace", style="cyan")
-    table.add_column("keys", style="dim")
-    for ns in known:
-        try:
-            keys = store.list(ns)
-        except Exception:
-            keys = []
-        if keys:
-            table.add_row(ns, ", ".join(sorted(keys)))
-    console.print(table)
 
 
 @cli.command(name="remember")

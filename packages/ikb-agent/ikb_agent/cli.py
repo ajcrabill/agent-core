@@ -28,6 +28,7 @@ from agent_core.ops.cli import (
     setup_command,
 )
 from agent_core.migrations.cli import migrate_group
+from agent_core.ops.secrets_cli import secrets_group
 from agent_core.settings.cli import settings_group
 from agent_core.web.cli import serve_command
 
@@ -57,6 +58,7 @@ def cli() -> None:
 
 
 cli.add_command(settings_group, name="settings")
+cli.add_command(secrets_group, name="secrets")
 cli.add_command(migrate_group, name="migrate")
 
 
@@ -163,6 +165,8 @@ def restore(ctx, source, db_url, settings_path, yes, skip_schema_check):
 def setup(ctx, tier, config_path, db_url, no_init, no_doctor):
     """Interactive setup wizard. Runs init + doctor at the end by default."""
     config_path.parent.mkdir(parents=True, exist_ok=True)
+    sqlite_path = state_dir() / "agent.db"
+    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
     ctx.invoke(
         setup_command,
         tier=tier,
@@ -170,6 +174,10 @@ def setup(ctx, tier, config_path, db_url, no_init, no_doctor):
         db_url=db_url,
         no_init=no_init,
         no_doctor=no_doctor,
+        default_db_urls={
+            "sqlite": f"sqlite:///{sqlite_path}",
+            "postgres": default_db_url(),
+        },
     )
 
 
@@ -183,8 +191,13 @@ def setup(ctx, tier, config_path, db_url, no_init, no_doctor):
 )
 @click.option(
     "--db-url",
-    default=lambda: default_db_url(),
-    show_default="env IKB_DB_URL or local socket",
+    default=None,
+    show_default="reads from settings.storage.url",
+    help=(
+        "SQLAlchemy URL to bootstrap the schema against. When omitted, "
+        "init reads settings.storage.url (which the wizard wrote for you). "
+        "Use this to override for a one-shot init against a different DB."
+    ),
 )
 @click.option("--rotate-token", is_flag=True, help="Generate a new API token even if one exists.")
 @click.option(

@@ -162,8 +162,28 @@ def _diff_against_defaults(
 class SetupWizard:
     """Drive an interview to produce an ``AgentSettings`` + an ``agent.yml`` location."""
 
-    def __init__(self, io: WizardIO | None = None) -> None:
+    def __init__(
+        self,
+        io: WizardIO | None = None,
+        *,
+        default_db_urls: dict[str, str] | None = None,
+    ) -> None:
+        """Build a wizard.
+
+        ``default_db_urls`` is an optional mapping from backend name
+        ("sqlite" / "postgres") to a backend-appropriate URL the product
+        wants written into settings.storage.url when the user picks that
+        backend. Without it, the wizard sets only storage.backend and
+        leaves storage.url at the schema default — fine for tests, but
+        downstream init will fall back to a cwd-relative SQLite path
+        which probably isn't what the user wanted.
+
+        Pass ``{"sqlite": "sqlite:///<state-dir>/agent.db", "postgres":
+        "postgresql+psycopg:///ikb_agent?host=/tmp"}`` from the product
+        setup wrapper so the wizard's choice flows through to disk.
+        """
         self.io = io or stdio_io()
+        self.default_db_urls = default_db_urls or {}
 
     # ── Entry ──────────────────────────────────────────────────────────────
 
@@ -218,11 +238,24 @@ class SetupWizard:
         backend = self.io.ask("Storage backend (sqlite|postgres)", default="sqlite")
         if backend not in ("sqlite", "postgres"):
             raise WizardValidationError(f"backend must be sqlite or postgres (got {backend!r})")
+        storage_update: dict[str, Any] = {}
         if backend != settings.storage.backend:
-            settings = settings.model_copy(
-                update={"storage": settings.storage.model_copy(update={"backend": backend})}
-            )
+            storage_update["backend"] = backend
             overrides["storage.backend"] = backend
+        # Write storage.url when the caller supplied a backend-specific
+        # default; this keeps init's `db_url or settings.storage.url`
+        # resolution self-consistent with the user's choice and avoids
+        # the cwd-relative `sqlite:///./agent.db` schema default leaking
+        # through.
+        if backend in self.default_db_urls:
+            chosen_url = self.default_db_urls[backend]
+            if chosen_url and chosen_url != settings.storage.url:
+                storage_update["url"] = chosen_url
+                overrides["storage.url"] = chosen_url
+        if storage_update:
+            settings = settings.model_copy(
+                update={"storage": settings.storage.model_copy(update=storage_update)}
+            )
 
         return settings, overrides
 

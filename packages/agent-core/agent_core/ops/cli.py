@@ -264,15 +264,25 @@ def setup_command(
     no_init: bool,
     no_doctor: bool,
     db_url: str | None,
+    default_db_urls: dict[str, str] | None = None,
 ) -> None:
     """Interactive setup wizard. Runs init + doctor at the end by default.
 
     The full first-run flow is: ask 3 questions, write agent.yml, bootstrap
     the schema, generate an API token, run health checks. Pass --no-init
     or --no-doctor to skip those tail steps; useful in CI or when scripting
-    around the wizard."""
+    around the wizard.
+
+    ``default_db_urls`` is the product's per-backend URL preference (e.g.
+    ``{"sqlite": "sqlite:///<state>/agent.db", "postgres": "<dsn>"}``).
+    The wizard uses it to write a sensible storage.url after the user
+    picks a backend, so subsequent ``init`` reads a consistent URL out
+    of settings instead of falling back to the schema default
+    ``sqlite:///./agent.db`` (which is cwd-relative — almost never what
+    the user wants on the second run from a different directory).
+    """
     try:
-        result = SetupWizard().run(tier=tier)  # type: ignore[arg-type]
+        result = SetupWizard(default_db_urls=default_db_urls).run(tier=tier)  # type: ignore[arg-type]
     except WizardValidationError as e:
         console.print(f"[red]validation failed:[/red] {e}")
         sys.exit(1)

@@ -30,6 +30,7 @@ from agent_core.ops.cli import (
 from agent_core.migrations.cli import migrate_group
 from agent_core.ops.autonomous_cli import digest_command, run_command
 from agent_core.ops.calendar_cli import calendar_group
+from agent_core.ops.chat_cli import chat_command, recall_command, remember_command
 from agent_core.ops.email_cli import email_group
 from agent_core.ops.secrets_cli import secrets_group
 from agent_core.settings.cli import settings_group
@@ -66,6 +67,9 @@ cli.add_command(run_command, name="run")
 cli.add_command(digest_command, name="digest")
 cli.add_command(calendar_group, name="calendar")
 cli.add_command(email_group, name="email")
+cli.add_command(remember_command, name="remember")
+cli.add_command(recall_command, name="recall")
+cli.add_command(chat_command, name="chat")
 cli.add_command(migrate_group, name="migrate")
 
 

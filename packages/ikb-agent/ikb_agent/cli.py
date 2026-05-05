@@ -277,6 +277,8 @@ def serve(ctx, config_path, db_url, host, port, api_token, reload):
 @cli.command(name="info")
 def info() -> None:
     """Show resolved ikb paths + DSN + version. Useful in bug reports."""
+    from agent_core.settings import SettingsManager
+
     table = Table(title="ikb-agent", show_header=False)
     table.add_column("key", style="cyan", no_wrap=True)
     table.add_column("value")
@@ -285,7 +287,23 @@ def info() -> None:
     table.add_row("config dir", str(config_dir()))
     table.add_row("settings file", str(default_settings_path()))
     table.add_row("state dir", str(state_dir()))
-    table.add_row("db url", _redact_password(default_db_url()))
+
+    # Prefer the URL the user actually configured (settings.storage.url
+    # written by the wizard) over the product's hardcoded PG default.
+    # Only consult settings if the file exists — otherwise the schema
+    # default (sqlite:///./agent.db) would mask the env-var override
+    # that default_db_url() respects.
+    configured_url = default_db_url()
+    if default_settings_path().exists():
+        try:
+            mgr = SettingsManager(path=default_settings_path())
+            from_settings = mgr.get("storage.url")
+            if from_settings:
+                configured_url = from_settings
+        except Exception:
+            pass
+    table.add_row("db url", _redact_password(configured_url))
+
     table.add_row(
         "config exists",
         "yes" if default_settings_path().exists() else "no (run `ikb setup`)",

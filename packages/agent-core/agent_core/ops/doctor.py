@@ -28,6 +28,7 @@ Design rules:
 
 from __future__ import annotations
 
+import json
 import logging
 import urllib.error
 import urllib.request
@@ -255,7 +256,14 @@ class VaultPathCheck:
 
 
 class OllamaReachableCheck:
-    """If embedding_provider='ollama', the configured base_url answers."""
+    """If embedding_provider='ollama', the configured base_url answers AND
+    the configured embedding_model is actually pulled.
+
+    The "model is pulled" sub-check matters because Ollama returns 404 at
+    embedding-call time when a model isn't local — which surfaces as a
+    confusing crash inside `<product> remember` rather than a clear
+    diagnostic. We catch it at doctor time instead.
+    """
 
     name = "ollama"
     timeout = 3.0
@@ -271,19 +279,45 @@ class OllamaReachableCheck:
         base = _settings_attr(
             ctx.settings, "openbrain", "ollama_base_url", default="http://localhost:11434"
         )
+        model = _settings_attr(
+            ctx.settings, "openbrain", "embedding_model", default="nomic-embed-text"
+        )
         url = f"{base.rstrip('/')}/api/tags"
         try:
             with urllib.request.urlopen(url, timeout=self.timeout) as resp:
-                if 200 <= resp.status < 300:
+                if not 200 <= resp.status < 300:
+                    return CheckResult(
+                        name=self.name,
+                        status=CheckStatus.warn,
+                        message=f"unexpected HTTP {resp.status} from {url}",
+                    )
+                # Parse the model list and verify ours is present. Ollama
+                # tolerates "<name>" matching "<name>:latest" for tagless
+                # references; we mirror that tolerance.
+                try:
+                    body = json.loads(resp.read().decode())
+                    available = {m.get("name", "") for m in body.get("models", [])}
+                except Exception:
                     return CheckResult(
                         name=self.name,
                         status=CheckStatus.ok,
-                        message=f"reachable at {base}",
+                        message=f"reachable at {base} (could not parse model list)",
+                    )
+                wanted = model if ":" in model else f"{model}:latest"
+                if model in available or wanted in available:
+                    return CheckResult(
+                        name=self.name,
+                        status=CheckStatus.ok,
+                        message=f"reachable at {base}; embedding model {model!r} pulled",
                     )
                 return CheckResult(
                     name=self.name,
                     status=CheckStatus.warn,
-                    message=f"unexpected HTTP {resp.status} from {url}",
+                    message=(
+                        f"reachable at {base}, but embedding model {model!r} "
+                        f"is not pulled — run `ollama pull {model}` "
+                        "(otherwise OpenBrain capture will 404 at embedding time)"
+                    ),
                 )
         except (urllib.error.URLError, TimeoutError) as e:
             return CheckResult(

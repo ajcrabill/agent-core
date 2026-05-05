@@ -419,6 +419,21 @@ def init_command(
         sys.exit(1)
     console.print(f"[green]schema at head[/green] ({resolved_url})")
 
+    # Persist the resolved URL into settings so subsequent commands
+    # (doctor, run, digest, …) read the same DB without needing an
+    # explicit --db-url every time. Only writes when settings.storage.url
+    # is currently empty — explicit user overrides via the wizard or
+    # `<product> settings set storage.url=...` are preserved.
+    if not mgr.get("storage.url"):
+        try:
+            mgr.set("storage.url", resolved_url, save=True)
+        except Exception as e:
+            # Non-fatal: settings might be read-only in CI; the schema
+            # is already at head, that's the important part.
+            console.print(
+                f"[yellow]could not persist storage.url to settings:[/yellow] {e}"
+            )
+
     # Generate / load API token.
     store = default_store()
     existing = store.get(SECRETS_NAMESPACE, API_TOKEN_KEY)

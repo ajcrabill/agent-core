@@ -297,6 +297,8 @@ def language_model_from_settings(settings: object, secrets: object) -> object:
     Returns one of:
       - ``StubLanguageModel`` if ``settings.llm.provider == "stub"``
       - ``OpenAICompatLanguageModel`` for ``openai_compat`` / ``ollama``
+      - ``FallbackLanguageModel`` wrapping the above pair when
+        ``settings.llm.fallback.provider`` is non-stub.
 
     The secrets store is consulted for the API key (under namespace
     ``llm``, key ``settings.llm.api_key_secret_key``). Missing key is OK
@@ -305,32 +307,77 @@ def language_model_from_settings(settings: object, secrets: object) -> object:
     from agent_core.skills.stubs import StubLanguageModel
 
     llm = settings.llm  # type: ignore[attr-defined]
+    primary = _build_one_lm(
+        provider=llm.provider,
+        base_url=llm.base_url,
+        model=llm.model,
+        api_key_secret_key=llm.api_key_secret_key,
+        max_tokens=llm.max_tokens,
+        temperature=llm.temperature,
+        timeout_seconds=llm.timeout_seconds,
+        secrets=secrets,
+    )
 
-    if llm.provider == "stub":
+    # Fallback: optional secondary LM the primary falls back to on
+    # LanguageModelError. Skip when fallback.provider == "stub" (the
+    # default) — wrapping in a stub fallback would mask real failures
+    # with canned text.
+    fallback_cfg = getattr(llm, "fallback", None)
+    if fallback_cfg is not None and fallback_cfg.provider != "stub":
+        fallback = _build_one_lm(
+            provider=fallback_cfg.provider,
+            base_url=fallback_cfg.base_url,
+            model=fallback_cfg.model,
+            api_key_secret_key=fallback_cfg.api_key_secret_key,
+            max_tokens=fallback_cfg.max_tokens,
+            temperature=fallback_cfg.temperature,
+            timeout_seconds=fallback_cfg.timeout_seconds,
+            secrets=secrets,
+        )
+        from agent_core.skills.fallback import FallbackLanguageModel
+
+        return FallbackLanguageModel(primary=primary, fallback=fallback)
+
+    return primary
+
+
+def _build_one_lm(
+    *,
+    provider: str,
+    base_url: str,
+    model: str,
+    api_key_secret_key: str,
+    max_tokens: int,
+    temperature: float,
+    timeout_seconds: float,
+    secrets: object,
+) -> object:
+    """Construct a single LanguageModel from one set of LLM-shape fields."""
+    from agent_core.skills.stubs import StubLanguageModel
+
+    if provider == "stub":
         return StubLanguageModel(default="(stub-llm response)")
 
-    api_key = secrets.get("llm", llm.api_key_secret_key)  # type: ignore[attr-defined]
-    if llm.provider == "openai_compat" and not api_key:
+    api_key = secrets.get("llm", api_key_secret_key)  # type: ignore[attr-defined]
+    if provider == "openai_compat" and not api_key:
         raise LanguageModelError(
-            f"llm.provider={llm.provider} but no API key in secrets store under "
-            f"llm/{llm.api_key_secret_key}. Set with: "
-            f"AGENTCORE_LLM_{llm.api_key_secret_key.upper()}=sk-... "
-            f"or via `agent settings llm api-key set`."
+            f"llm.provider={provider} but no API key in secrets store under "
+            f"llm/{api_key_secret_key}. Set with: "
+            f"`<product> secrets set llm.{api_key_secret_key}` "
+            f"or env var AGENTCORE_LLM_{api_key_secret_key.upper()}=sk-..."
         )
 
     # Ollama default base_url override — be friendly to the common case.
-    if llm.provider == "ollama" and llm.base_url == "https://api.openai.com/v1":
+    if provider == "ollama" and base_url == "https://api.openai.com/v1":
         base_url = "http://localhost:11434/v1"
-    else:
-        base_url = llm.base_url
 
     return OpenAICompatLanguageModel(
         base_url=base_url,
-        model=llm.model,
+        model=model,
         api_key=api_key,
-        timeout=llm.timeout_seconds,
-        default_max_tokens=llm.max_tokens,
-        default_temperature=llm.temperature,
+        timeout=timeout_seconds,
+        default_max_tokens=max_tokens,
+        default_temperature=temperature,
     )
 
 

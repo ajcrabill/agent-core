@@ -465,6 +465,54 @@ class RuntimeSettings(BaseModel):
 LLMProvider = Literal["stub", "openai_compat", "ollama"]
 
 
+class LLMFallbackSettings(BaseModel):
+    """Optional fallback LLM the agent uses when the primary fails.
+
+    Same shape as ``LLMSettings`` (minus the recursive ``fallback`` field).
+    Wraps the primary in a ``FallbackLanguageModel`` that catches
+    ``LanguageModelError`` from the primary's ``complete()`` /
+    ``complete_with_tools()`` and retries against this configuration.
+
+    Common pattern: primary is a local Ollama (free, private, fast when
+    it's working), fallback is a cheap-and-reliable hosted endpoint
+    (DeepSeek, OpenAI, etc) so a stopped Ollama or a dead Tailscale link
+    doesn't break the agent.
+
+    Set ``provider="stub"`` (the default) to disable the fallback —
+    a stub fallback would mask real failures with canned text, so we
+    treat "fallback not really configured" as "no fallback".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: LLMProvider = Field(
+        default="stub",
+        description=(
+            "When 'stub' (the default), no fallback is wired. Set to "
+            "'openai_compat' or 'ollama' to enable."
+        ),
+    )
+    base_url: str = Field(
+        default="https://api.deepseek.com/v1",
+        description="Endpoint for the fallback provider.",
+    )
+    model: str = Field(
+        default="deepseek-chat",
+        description="Model name passed to the fallback /chat/completions.",
+    )
+    api_key_secret_key: str = Field(
+        default="deepseek_api_key",
+        description=(
+            "Key under secrets namespace 'llm' that holds the fallback "
+            "bearer token. Default 'deepseek_api_key' so fallback keys "
+            "don't collide with the primary's 'openai_api_key'."
+        ),
+    )
+    max_tokens: int = Field(default=2048, ge=1)
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0)
+    timeout_seconds: float = Field(default=60.0, gt=0.0)
+
+
 class LLMSettings(BaseModel):
     """Where the agent's intelligence comes from.
 
@@ -539,6 +587,13 @@ class LLMSettings(BaseModel):
         default=60.0,
         gt=0.0,
         description="HTTP timeout for LLM calls.",
+    )
+    fallback: LLMFallbackSettings = Field(
+        default_factory=LLMFallbackSettings,
+        description=(
+            "Optional secondary LLM the agent uses when the primary "
+            "raises LanguageModelError. Default disabled (provider=stub)."
+        ),
     )
 
 

@@ -51,6 +51,7 @@ from agent_core.skills.runner import (
     SkillOutputError,
     SkillRunner,
 )
+from agent_core.skills.fallback import FallbackLanguageModel
 from agent_core.skills.stubs import StubLanguageModel
 from agent_core.skills.tools import (
     CompletionResponse,
@@ -95,6 +96,7 @@ __all__ = [
     "DocumentCreator",
     "EmailComposer",
     "EmailTriage",
+    "FallbackLanguageModel",
     "LanguageModel",
     "LanguageModelError",
     "OpenAICompatLanguageModel",

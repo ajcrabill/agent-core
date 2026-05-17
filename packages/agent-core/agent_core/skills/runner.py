@@ -23,7 +23,6 @@ from typing import Any
 from pydantic import ValidationError
 
 from agent_core.skills.context import SkillContext, SkillResult
-from agent_core.skills.protocol import Skill
 from agent_core.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)

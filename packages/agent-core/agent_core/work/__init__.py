@@ -18,14 +18,14 @@ Cron watchdog lands when scheduling lands (later sprint).
 
 from agent_core.work.calendar import (
     CalendarEvent,
-    CalendarFetchError,
     CalendarFetcher,
+    CalendarFetchError,
     fetch_today,
     fetch_window,
 )
 from agent_core.work.email_fetch import (
-    EmailFetchError,
     EmailFetcher,
+    EmailFetchError,
     FetchedEmail,
     FetchReport,
     fetch_and_capture,

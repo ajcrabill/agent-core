@@ -108,9 +108,7 @@ class OpenAICompatLanguageModel:
                 {"role": "user", "content": user},
             ],
             "max_tokens": effective_max_tokens,
-            "temperature": (
-                temperature if temperature is not None else self.default_temperature
-            ),
+            "temperature": (temperature if temperature is not None else self.default_temperature),
         }
 
         try:
@@ -126,16 +124,12 @@ class OpenAICompatLanguageModel:
             # Truncate body in error message — providers occasionally return
             # huge HTML error pages.
             body = resp.text[:500]
-            raise LanguageModelError(
-                f"{self.base_url} returned {resp.status_code}: {body}"
-            )
+            raise LanguageModelError(f"{self.base_url} returned {resp.status_code}: {body}")
 
         try:
             data = resp.json()
         except ValueError as e:
-            raise LanguageModelError(
-                f"{self.base_url} returned non-JSON: {resp.text[:200]}"
-            ) from e
+            raise LanguageModelError(f"{self.base_url} returned non-JSON: {resp.text[:200]}") from e
 
         try:
             choice = data["choices"][0]
@@ -159,8 +153,7 @@ class OpenAICompatLanguageModel:
             and _retry_count < 1
         ):
             logger.info(
-                "%s returned empty content with finish=length; "
-                "retrying with %d max_tokens",
+                "%s returned empty content with finish=length; retrying with %d max_tokens",
                 self.base_url,
                 effective_max_tokens * 2,
             )
@@ -181,8 +174,7 @@ class OpenAICompatLanguageModel:
         # gracefully than a "no content" panic.
         if isinstance(reasoning, str) and reasoning:
             logger.warning(
-                "%s returned empty content; falling back to reasoning field "
-                "(%d chars)",
+                "%s returned empty content; falling back to reasoning field (%d chars)",
                 self.base_url,
                 len(reasoning),
             )
@@ -203,7 +195,7 @@ class OpenAICompatLanguageModel:
         tools: list,
         max_tokens: int | None = None,
         temperature: float | None = None,
-    ) -> "CompletionResponse":  # noqa: F821
+    ) -> CompletionResponse:  # noqa: F821
         """Send a chat-completions request with tool-use enabled.
 
         Returns a CompletionResponse: either text content or a list of
@@ -227,9 +219,7 @@ class OpenAICompatLanguageModel:
             "model": self.model,
             "messages": full_messages,
             "max_tokens": max_tokens or self.default_max_tokens,
-            "temperature": (
-                temperature if temperature is not None else self.default_temperature
-            ),
+            "temperature": (temperature if temperature is not None else self.default_temperature),
         }
         if tools:
             payload["tools"] = [t.to_openai_format() for t in tools]
@@ -246,16 +236,12 @@ class OpenAICompatLanguageModel:
 
         if resp.status_code >= 400:
             body = resp.text[:500]
-            raise LanguageModelError(
-                f"{self.base_url} returned {resp.status_code}: {body}"
-            )
+            raise LanguageModelError(f"{self.base_url} returned {resp.status_code}: {body}")
 
         try:
             data = resp.json()
         except ValueError as e:
-            raise LanguageModelError(
-                f"{self.base_url} returned non-JSON: {resp.text[:200]}"
-            ) from e
+            raise LanguageModelError(f"{self.base_url} returned non-JSON: {resp.text[:200]}") from e
 
         try:
             choice = data["choices"][0]
@@ -304,7 +290,6 @@ def language_model_from_settings(settings: object, secrets: object) -> object:
     ``llm``, key ``settings.llm.api_key_secret_key``). Missing key is OK
     for ``ollama`` provider; required for ``openai_compat``.
     """
-    from agent_core.skills.stubs import StubLanguageModel
 
     llm = settings.llm  # type: ignore[attr-defined]
     primary = _build_one_lm(

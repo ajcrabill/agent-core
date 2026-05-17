@@ -90,7 +90,9 @@ class PeopleStore:
         )
 
     def _create(self, **fields: Any) -> Person:
-        person = Person(**{k: v for k, v in fields.items() if v is not None or k == "metadata_json"})
+        person = Person(
+            **{k: v for k, v in fields.items() if v is not None or k == "metadata_json"}
+        )
         if not person.contact_methods:
             person.contact_methods = {}
         with self.db.session() as s:
@@ -131,11 +133,7 @@ class PeopleStore:
         same list."""
         with self.db.session() as s:
             stmt = select(Person)
-            return [
-                p
-                for p in s.exec(stmt).all()
-                if p.name.lower() == name.lower()
-            ]
+            return [p for p in s.exec(stmt).all() if p.name.lower() == name.lower()]
 
     def find_by_email(self, address: str) -> Person | None:
         """Find by any matching contact_methods entry of kind ``email``.
@@ -152,9 +150,10 @@ class PeopleStore:
                 if isinstance(value, str) and value.lower() == addr:
                     return person
                 # Tolerate list-of-emails for people with multiple addresses
-                if isinstance(value, list):
-                    if any(isinstance(v, str) and v.lower() == addr for v in value):
-                        return person
+                if isinstance(value, list) and any(
+                    isinstance(v, str) and v.lower() == addr for v in value
+                ):
+                    return person
         return None
 
     def _find_by_name_org(self, name: str, organization: str | None) -> Person | None:

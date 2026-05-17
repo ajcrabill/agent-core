@@ -183,7 +183,8 @@ def _dump_table(db: Database, table_name: str) -> list[dict[str, Any]]:
     class for (forward-compat with later schema additions). Uses the engine
     directly (rather than ``session.exec``) so Core ``select(Table)`` returns
     ordinary Row objects without SQLModel's entity-mapping interference."""
-    from sqlalchemy import MetaData, Table, select as core_select
+    from sqlalchemy import MetaData, Table
+    from sqlalchemy import select as core_select
 
     md = MetaData()
     tbl = Table(table_name, md, autoload_with=db.engine)

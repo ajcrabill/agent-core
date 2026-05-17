@@ -11,18 +11,15 @@ from pathlib import Path
 
 import pytest
 import yaml
-from click.testing import CliRunner
-
 from agent_core.ops.cli import API_TOKEN_KEY, SECRETS_NAMESPACE
 from agent_core.secrets import MemorySecretStore
 from agent_core.web.cli import serve_command
+from click.testing import CliRunner
 
 
 def _make_settings(tmp_path: Path) -> Path:
     cfg = tmp_path / "agent.yml"
-    cfg.write_text(
-        yaml.safe_dump({"storage": {"url": f"sqlite:///{tmp_path / 'agent.db'}"}})
-    )
+    cfg.write_text(yaml.safe_dump({"storage": {"url": f"sqlite:///{tmp_path / 'agent.db'}"}}))
     return cfg
 
 
@@ -32,9 +29,7 @@ def patched_uvicorn(monkeypatch):
     calls: list[dict] = []
 
     def fake_run(app, *, host, port, reload, log_level):
-        calls.append(
-            {"app": app, "host": host, "port": port, "reload": reload}
-        )
+        calls.append({"app": app, "host": host, "port": port, "reload": reload})
 
     # Patch where uvicorn.run is looked up (web.cli imports it at call time)
     monkeypatch.setattr("uvicorn.run", fake_run)
@@ -54,9 +49,7 @@ def memory_store(monkeypatch) -> MemorySecretStore:
 # ── Tests ──────────────────────────────────────────────────────────────────
 
 
-def test_serve_loads_token_from_secret_store(
-    tmp_path: Path, memory_store, patched_uvicorn
-) -> None:
+def test_serve_loads_token_from_secret_store(tmp_path: Path, memory_store, patched_uvicorn) -> None:
     cfg = _make_settings(tmp_path)
     memory_store.set(SECRETS_NAMESPACE, API_TOKEN_KEY, "test-token-from-store-123")
     # Bootstrap minimal schema so the API can build
@@ -94,9 +87,7 @@ def test_serve_explicit_token_wins_over_store(
     assert "from-store" not in result.output
 
 
-def test_serve_fails_when_no_token_anywhere(
-    tmp_path: Path, memory_store, patched_uvicorn
-) -> None:
+def test_serve_fails_when_no_token_anywhere(tmp_path: Path, memory_store, patched_uvicorn) -> None:
     """Fail closed — if neither the secrets store nor --token has a token,
     refuse to start. (A serve command running without auth would silently
     accept all callers.)"""
@@ -123,9 +114,7 @@ def test_serve_uses_settings_db_url_by_default(
     assert result.exit_code == 0, result.output
 
 
-def test_serve_passes_host_and_port_through(
-    tmp_path: Path, memory_store, patched_uvicorn
-) -> None:
+def test_serve_passes_host_and_port_through(tmp_path: Path, memory_store, patched_uvicorn) -> None:
     cfg = _make_settings(tmp_path)
     memory_store.set(SECRETS_NAMESPACE, API_TOKEN_KEY, "x")
     from agent_core.state.db import Database

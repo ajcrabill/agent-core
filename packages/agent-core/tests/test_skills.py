@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import BaseModel
-
 from agent_core.settings import AgentSettings
 from agent_core.skills import (
     SeedRule,
@@ -15,7 +13,7 @@ from agent_core.skills import (
     StubLanguageModel,
 )
 from agent_core.state import Database
-
+from pydantic import BaseModel
 
 # ── Fixture skill ──────────────────────────────────────────────────────────
 
@@ -184,9 +182,7 @@ def test_runner_validates_skill_output() -> None:
 
         def execute(self, input, context):
             # Returns the wrong Pydantic model
-            return SkillResult(
-                output=_WrongOutputs(unexpected="hi"), confidence=0.5, rationale=""
-            )
+            return SkillResult(output=_WrongOutputs(unexpected="hi"), confidence=0.5, rationale="")
 
     r = SkillRegistry()
     r.register(_BadSkill())
@@ -214,7 +210,7 @@ def test_stub_language_model_cycles_responses() -> None:
 
 def test_stub_language_model_pattern_match() -> None:
     lm = StubLanguageModel(
-        patterns=[("triage", "{\"action\": \"flag\", \"score\": 0.9}")],
+        patterns=[("triage", '{"action": "flag", "score": 0.9}')],
         default="other",
     )
     assert "flag" in lm.complete(system="email triage classifier", user="x")

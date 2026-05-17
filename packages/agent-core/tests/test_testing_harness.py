@@ -7,7 +7,6 @@ tests for the harness."""
 from __future__ import annotations
 
 import pytest
-
 from agent_core.openbrain.embeddings import (
     OllamaEmbeddingProvider,
     SemanticStubProvider,
@@ -23,7 +22,6 @@ from agent_core.testing import (
     StubStepExecutor,
 )
 
-
 # ── AgentTestBed: defaults ────────────────────────────────────────────────
 
 
@@ -36,9 +34,8 @@ def test_create_uses_in_memory_sqlite_by_default() -> None:
     bed = AgentTestBed.create()
     assert isinstance(bed.db, Database)
     # Schema is created — querying any table should not raise
-    from sqlmodel import select
-
     from agent_core.state.models import Obligation
+    from sqlmodel import select
 
     with bed.db.session() as s:
         list(s.exec(select(Obligation)).all())
@@ -61,9 +58,7 @@ def test_create_with_named_preset() -> None:
 
 
 def test_create_with_dict_overrides() -> None:
-    bed = AgentTestBed.create(
-        settings={"learning": {"detector_strictness": "strict"}}
-    )
+    bed = AgentTestBed.create(settings={"learning": {"detector_strictness": "strict"}})
     assert bed.settings.learning.detector_strictness == "strict"
 
 
@@ -76,9 +71,7 @@ def test_create_with_explicit_settings_object_honors_ollama_choice() -> None:
 
 
 def test_create_with_dict_can_explicitly_pick_stub_semantic() -> None:
-    bed = AgentTestBed.create(
-        settings={"openbrain": {"embedding_provider": "stub-semantic"}}
-    )
+    bed = AgentTestBed.create(settings={"openbrain": {"embedding_provider": "stub-semantic"}})
     assert isinstance(bed.openbrain.embeddings, SemanticStubProvider)
 
 
@@ -102,9 +95,7 @@ def test_components_are_lazy() -> None:
 def test_with_setting_invalidates_cached_components() -> None:
     bed = AgentTestBed.create()
     first_dispatcher = bed.dispatcher
-    bed.with_setting("notifications.enabled", True).with_setting(
-        "notifications.ntfy_topic", "x"
-    )
+    bed.with_setting("notifications.enabled", True).with_setting("notifications.ntfy_topic", "x")
     assert bed.dispatcher is not first_dispatcher
     assert bed.dispatcher.enabled is True
 

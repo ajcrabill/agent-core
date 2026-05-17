@@ -14,8 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
 from agent_core.openbrain import OpenBrainStore, StubEmbeddingProvider
 from agent_core.settings import AgentSettings, SettingsManager
 from agent_core.state import Database
@@ -27,7 +25,7 @@ from agent_core.state.models import (
 )
 from agent_core.web import create_app
 from agent_core.web.auth import TokenStore
-
+from fastapi.testclient import TestClient
 
 TOKEN = "test-token-7x9k"
 
@@ -186,10 +184,16 @@ def test_list_obligations_returns_rows(app_factory) -> None:
 
 def test_list_obligations_filters_by_status(db: Database, app_factory) -> None:
     with db.session() as s:
-        s.add(Obligation(title="inbox-one", source=ObligationSource.manual,
-                         status=ObligationStatus.inbox))
-        s.add(Obligation(title="done-one", source=ObligationSource.manual,
-                         status=ObligationStatus.done))
+        s.add(
+            Obligation(
+                title="inbox-one", source=ObligationSource.manual, status=ObligationStatus.inbox
+            )
+        )
+        s.add(
+            Obligation(
+                title="done-one", source=ObligationSource.manual, status=ObligationStatus.done
+            )
+        )
         s.commit()
     client = app_factory()
     r = client.get("/obligations?status=done", headers=_hdr())
@@ -200,10 +204,18 @@ def test_list_obligations_filters_by_status(db: Database, app_factory) -> None:
 
 def test_list_obligations_filters_by_owner(db: Database, app_factory) -> None:
     with db.session() as s:
-        s.add(Obligation(title="agent-owned", source=ObligationSource.manual,
-                         owner=ObligationOwner.agent))
-        s.add(Obligation(title="principal-owned", source=ObligationSource.manual,
-                         owner=ObligationOwner.principal))
+        s.add(
+            Obligation(
+                title="agent-owned", source=ObligationSource.manual, owner=ObligationOwner.agent
+            )
+        )
+        s.add(
+            Obligation(
+                title="principal-owned",
+                source=ObligationSource.manual,
+                owner=ObligationOwner.principal,
+            )
+        )
         s.commit()
     client = app_factory()
     r = client.get("/obligations?owner=principal", headers=_hdr())
@@ -276,9 +288,7 @@ def test_patch_obligation_to_done_stamps_completed_at(db: Database, app_factory)
         s.refresh(ob)
         ob_id = ob.id
     client = app_factory()
-    r = client.patch(
-        f"/obligations/{ob_id}", headers=_hdr(), json={"status": "done"}
-    )
+    r = client.patch(f"/obligations/{ob_id}", headers=_hdr(), json={"status": "done"})
     assert r.status_code == 200
     assert r.json()["completed_at"] is not None
 

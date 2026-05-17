@@ -47,10 +47,10 @@ class CalibrationManager:
     def from_settings(
         cls,
         settings: object,
-        db: "Database",
+        db: Database,
         *,
         ratifications_required: int = 5,
-    ) -> "CalibrationManager":
+    ) -> CalibrationManager:
         """Build from ``AgentSettings``: reads ``settings.learning.auto_promote_confidence``."""
         return cls(
             db,

@@ -121,9 +121,7 @@ class OpenBrainStore:
         elif ob.embedding_provider == "stub-semantic":
             provider = SemanticStubProvider()
         else:
-            raise ValueError(
-                f"unknown openbrain.embedding_provider: {ob.embedding_provider!r}"
-            )
+            raise ValueError(f"unknown openbrain.embedding_provider: {ob.embedding_provider!r}")
         return cls(
             db,
             provider,

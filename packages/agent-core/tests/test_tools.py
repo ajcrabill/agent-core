@@ -11,9 +11,7 @@ Coverage:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
-
-import pytest
+from datetime import UTC, datetime, timedelta
 
 from agent_core.skills import StubLanguageModel
 from agent_core.skills.tools import (
@@ -29,8 +27,7 @@ from agent_core.state.db import Database
 from agent_core.state.models import Obligation, ObligationSource, ObligationStatus
 from agent_core.work.calendar import CalendarEvent
 
-
-UTC = timezone.utc
+UTC = UTC
 
 
 # ── ToolDefinition surface ─────────────────────────────────────────────────
@@ -145,6 +142,7 @@ class _FakeHit:
         self.thought.content = content
         self.similarity = similarity
         if source_kind:
+
             class _S:
                 pass
 
@@ -191,23 +189,22 @@ class _FakeCalendar:
 
     def fetch_events(self, *, start, end):
         # Return events that overlap [start, end)
-        return [
-            e for e in self._events
-            if e.start < end and e.end > start
-        ]
+        return [e for e in self._events if e.start < end and e.end > start]
 
 
 def test_today_calendar_returns_events():
     today_morning = datetime.now(UTC).replace(hour=10, minute=0, second=0, microsecond=0)
-    cal = _FakeCalendar([
-        CalendarEvent(
-            uid="1",
-            summary="Q2 review",
-            start=today_morning,
-            end=today_morning + timedelta(hours=1),
-            location="Zoom",
-        ),
-    ])
+    cal = _FakeCalendar(
+        [
+            CalendarEvent(
+                uid="1",
+                summary="Q2 review",
+                start=today_morning,
+                end=today_morning + timedelta(hours=1),
+                location="Zoom",
+            ),
+        ]
+    )
     tools = default_read_tools()
     tool = next(t for t in tools if t.name == "today_calendar")
     result = tool.handler({}, ToolContext(calendar=cal))
@@ -218,18 +215,22 @@ def test_today_calendar_returns_events():
 
 def test_upcoming_calendar_uses_hours_arg():
     now = datetime.now(UTC)
-    cal = _FakeCalendar([
-        CalendarEvent(
-            uid="1", summary="soon",
-            start=now + timedelta(hours=2),
-            end=now + timedelta(hours=3),
-        ),
-        CalendarEvent(
-            uid="2", summary="far",
-            start=now + timedelta(hours=200),
-            end=now + timedelta(hours=201),
-        ),
-    ])
+    cal = _FakeCalendar(
+        [
+            CalendarEvent(
+                uid="1",
+                summary="soon",
+                start=now + timedelta(hours=2),
+                end=now + timedelta(hours=3),
+            ),
+            CalendarEvent(
+                uid="2",
+                summary="far",
+                start=now + timedelta(hours=200),
+                end=now + timedelta(hours=201),
+            ),
+        ]
+    )
     tools = default_read_tools()
     tool = next(t for t in tools if t.name == "upcoming_calendar")
     result = tool.handler({"hours": 24}, ToolContext(calendar=cal))
@@ -320,13 +321,9 @@ def test_run_tool_loop_executes_and_continues():
         tool_call_responses=[
             CompletionResponse(
                 content=None,
-                tool_calls=[
-                    ToolCall(id="c1", name="list_obligations", arguments={"limit": 5})
-                ],
+                tool_calls=[ToolCall(id="c1", name="list_obligations", arguments={"limit": 5})],
             ),
-            CompletionResponse(
-                content="You have two open obligations.", tool_calls=[]
-            ),
+            CompletionResponse(content="You have two open obligations.", tool_calls=[]),
         ]
     )
     out = run_tool_loop(
@@ -389,7 +386,7 @@ def test_run_tool_loop_max_iterations_safety():
     )
     assert "exceeded" in out.lower() or out == ""
     # Three iterations max → 3 tool calls executed
-    assert len([c for c in lm.tool_calls_recorded]) == 3
+    assert len(list(lm.tool_calls_recorded)) == 3
 
 
 def test_run_tool_loop_handles_lm_exception():
@@ -410,9 +407,7 @@ def test_run_tool_loop_handles_lm_exception():
 
 
 def test_run_tool_loop_passes_history_into_messages():
-    lm = StubLanguageModel(
-        tool_call_responses=[CompletionResponse(content="ok", tool_calls=[])]
-    )
+    lm = StubLanguageModel(tool_call_responses=[CompletionResponse(content="ok", tool_calls=[])])
     history = [
         {"role": "user", "content": "earlier user"},
         {"role": "assistant", "content": "earlier assistant"},

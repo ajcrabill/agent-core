@@ -41,7 +41,6 @@ from agent_core.notifications.transports import (
     NtfyTransport,
 )
 
-
 # ── Urgency ─────────────────────────────────────────────────────────────────
 
 
@@ -57,7 +56,7 @@ class Urgency(IntEnum):
     critical = 5
 
     @classmethod
-    def from_string(cls, name: str) -> "Urgency":
+    def from_string(cls, name: str) -> Urgency:
         try:
             return cls[name]
         except KeyError as e:
@@ -119,7 +118,7 @@ class NotificationDispatcher:
     # ── Factory ─────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_settings(cls, settings: object) -> "NotificationDispatcher":
+    def from_settings(cls, settings: object) -> NotificationDispatcher:
         """Build from ``AgentSettings``: reads all of ``settings.notifications.*``.
 
         Picks ``NoopTransport`` when the user has disabled notifications or

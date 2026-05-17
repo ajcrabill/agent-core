@@ -6,10 +6,7 @@ import json
 import sqlite3
 from pathlib import Path
 
-import pytest
 import yaml
-from click.testing import CliRunner
-
 from agent_core.migrations import (
     EsbyInstallMigration,
     esby_to_backup_payload,
@@ -18,8 +15,8 @@ from agent_core.migrations import (
 from agent_core.migrations.cli import migrate_group
 from agent_core.ops import restore_backup
 from agent_core.state import AutonomyOverride, Database, LearningRule, Person, Thought
+from click.testing import CliRunner
 from sqlmodel import select
-
 
 # ── Synthetic install fixture ──────────────────────────────────────────────
 
@@ -190,7 +187,9 @@ def test_settings_preset_used_when_no_preference(tmp_path: Path) -> None:
     """If preferences.yaml has no autonomy_bias, the CLI preset wins."""
     root = _build_install(tmp_path)
     # Strip the autonomy_bias from preferences
-    (root / "config" / "preferences.yaml").write_text(yaml.safe_dump({"version": 1, "preferences": {}}))
+    (root / "config" / "preferences.yaml").write_text(
+        yaml.safe_dump({"version": 1, "preferences": {}})
+    )
     state = migrate_esby_install(root, settings_preset="aggressive")
     assert state.settings_overlay["autonomy"]["default_policy"] == "aggressive"
 
@@ -200,11 +199,7 @@ def test_settings_preset_used_when_no_preference(tmp_path: Path) -> None:
 
 def test_each_config_yaml_lands_as_thought(tmp_path: Path) -> None:
     state = migrate_esby_install(_build_install(tmp_path))
-    config_files = {
-        s.source_uri
-        for s in state.sources
-        if s.source_kind == "esby_config"
-    }
+    config_files = {s.source_uri for s in state.sources if s.source_kind == "esby_config"}
     assert "config/preferences.yaml" in config_files
     assert "config/autonomy-matrix.yaml" in config_files
     assert "config/stakeholder_classes.yaml" in config_files

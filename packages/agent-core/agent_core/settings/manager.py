@@ -109,8 +109,7 @@ class SettingsManager:
             self._settings = AgentSettings.model_validate(merged)
         except ValidationError as e:
             raise SettingsError(
-                f"resolved settings failed validation:\n{e}\n"
-                f"check {self.path} and AGENT_* env vars"
+                f"resolved settings failed validation:\n{e}\ncheck {self.path} and AGENT_* env vars"
             ) from e
 
         self._sources = _compute_sources(defaults_dump, file_overlay, env_overlay)
@@ -204,7 +203,9 @@ class SettingsManager:
         except yaml.YAMLError as e:
             raise SettingsError(f"{self.path}: invalid YAML: {e}") from e
         if not isinstance(data, dict):
-            raise SettingsError(f"{self.path}: top-level must be a mapping, got {type(data).__name__}")
+            raise SettingsError(
+                f"{self.path}: top-level must be a mapping, got {type(data).__name__}"
+            )
         return data
 
     def _write_file(self, data: dict[str, Any]) -> None:

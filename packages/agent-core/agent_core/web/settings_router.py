@@ -40,9 +40,7 @@ def get_settings(request: Request) -> dict[str, Any]:
     if hasattr(s, "all_with_sources"):
         # SettingsManager — include source provenance.
         snapshot: dict[str, Any] = s.settings.model_dump()
-        snapshot["__sources__"] = {
-            row.path: row.source.value for row in s.all_with_sources()
-        }
+        snapshot["__sources__"] = {row.path: row.source.value for row in s.all_with_sources()}
         return snapshot
     return s.model_dump()
 

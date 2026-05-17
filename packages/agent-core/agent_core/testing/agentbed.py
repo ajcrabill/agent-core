@@ -82,15 +82,13 @@ class AgentTestBed:
             s = AgentSettings.model_validate(merged)
 
         # Default to stub embedding provider so tests don't need Ollama.
-        if s.openbrain.embedding_provider == "ollama" and preset is None and not isinstance(
-            settings, AgentSettings
+        if (
+            s.openbrain.embedding_provider == "ollama"
+            and preset is None
+            and not isinstance(settings, AgentSettings)
         ):
             s = s.model_copy(
-                update={
-                    "openbrain": s.openbrain.model_copy(
-                        update={"embedding_provider": "stub"}
-                    )
-                }
+                update={"openbrain": s.openbrain.model_copy(update={"embedding_provider": "stub"})}
             )
 
         if db is None:
@@ -183,7 +181,9 @@ class AgentTestBed:
         Returns ``self`` for chaining."""
         parts = dotted_path.split(".")
         if len(parts) != 2:
-            raise ValueError(f"with_setting only supports section.field paths (got {dotted_path!r})")
+            raise ValueError(
+                f"with_setting only supports section.field paths (got {dotted_path!r})"
+            )
         section_name, field_name = parts
         section = getattr(self.settings, section_name)
         new_section = section.model_copy(update={field_name: value})

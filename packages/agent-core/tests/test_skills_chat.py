@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC
 from typing import Any
-
-import pytest
 
 from agent_core.openbrain import OpenBrainStore, StubEmbeddingProvider
 from agent_core.skills import StubLanguageModel
@@ -19,7 +18,6 @@ from agent_core.skills.chat import (
 from agent_core.state import Database
 from agent_core.state.models import (
     Obligation,
-    ObligationOwner,
     ObligationSource,
     ObligationStatus,
 )
@@ -75,7 +73,9 @@ def test_build_context_prompt_includes_obligations() -> None:
         status: Any
 
     obs = [
-        _StubOb(title="Review CMS evaluation", body="v6 awaiting AJ approval", status="in-progress"),
+        _StubOb(
+            title="Review CMS evaluation", body="v6 awaiting AJ approval", status="in-progress"
+        ),
         _StubOb(title="Charlotte dinner", body=None, status="inbox"),
     ]
     out = build_context_prompt(base_system="x", obligations=obs)
@@ -122,7 +122,7 @@ def test_build_context_prompt_omits_empty_sections() -> None:
 
 def test_build_context_prompt_includes_calendar_events() -> None:
     """Sprint 23: today's events appear in the system prompt."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from agent_core.work.calendar import CalendarEvent
 
@@ -130,15 +130,15 @@ def test_build_context_prompt_includes_calendar_events() -> None:
         CalendarEvent(
             uid="1",
             summary="Q2 review",
-            start=datetime(2026, 5, 4, 14, 0, tzinfo=timezone.utc),
-            end=datetime(2026, 5, 4, 15, 0, tzinfo=timezone.utc),
+            start=datetime(2026, 5, 4, 14, 0, tzinfo=UTC),
+            end=datetime(2026, 5, 4, 15, 0, tzinfo=UTC),
             location="Zoom",
         ),
         CalendarEvent(
             uid="2",
             summary="Off site day",
-            start=datetime(2026, 5, 4, 0, 0, tzinfo=timezone.utc),
-            end=datetime(2026, 5, 5, 0, 0, tzinfo=timezone.utc),
+            start=datetime(2026, 5, 4, 0, 0, tzinfo=UTC),
+            end=datetime(2026, 5, 5, 0, 0, tzinfo=UTC),
             all_day=True,
         ),
     ]
@@ -264,9 +264,7 @@ def test_run_turn_excludes_done_obligations() -> None:
 def test_run_turn_injects_openbrain_hits() -> None:
     db = _db()
     store = OpenBrainStore(db, StubEmbeddingProvider())
-    store.capture(
-        "Charlotte mentioned the Q3 budget gap on Tuesday", source_kind="gmail"
-    )
+    store.capture("Charlotte mentioned the Q3 budget gap on Tuesday", source_kind="gmail")
     lm = StubLanguageModel(default="ok")
     session = ChatSession(inject_obligations=False, inject_openbrain=True)
     run_turn(
@@ -310,6 +308,7 @@ def test_run_turn_respects_custom_system_prompt() -> None:
 def test_run_turn_handles_openbrain_failure_gracefully() -> None:
     """An openbrain search failure should NOT break the chat turn —
     just skip the injection."""
+
     class _BrokenStore:
         def search(self, *args, **kwargs):
             raise RuntimeError("storage went away")
@@ -360,9 +359,8 @@ def test_run_turn_auto_captures_to_openbrain() -> None:
 def test_run_turn_capture_includes_source_provenance() -> None:
     """Captured chat turns get source_kind='chat' + source_uri=session_id
     so they're filterable + groupable later."""
-    from sqlmodel import select
-
     from agent_core.state.models import ThoughtSource
+    from sqlmodel import select
 
     db = _db()
     store = OpenBrainStore(db, StubEmbeddingProvider())

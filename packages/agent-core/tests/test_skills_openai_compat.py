@@ -6,7 +6,6 @@ import json
 
 import httpx
 import pytest
-
 from agent_core.secrets import MemorySecretStore
 from agent_core.settings import AgentSettings
 from agent_core.skills import (
@@ -15,7 +14,6 @@ from agent_core.skills import (
     StubLanguageModel,
     language_model_from_settings,
 )
-
 
 # ── HTTP transport fixtures ────────────────────────────────────────────────
 
@@ -115,9 +113,7 @@ def test_complete_omits_authorization_when_no_key(mock_post) -> None:
 def test_complete_sends_messages_in_correct_format(mock_post) -> None:
     calls, set_handler = mock_post
     set_handler(lambda req: _ok_response())
-    lm = OpenAICompatLanguageModel(
-        base_url="https://api.example.com/v1", model="m", api_key="k"
-    )
+    lm = OpenAICompatLanguageModel(base_url="https://api.example.com/v1", model="m", api_key="k")
     lm.complete(system="SYS", user="USR")
     body = json.loads(calls[0].content)
     assert body["model"] == "m"
@@ -143,8 +139,11 @@ def test_max_tokens_and_temperature_override(mock_post) -> None:
     calls, set_handler = mock_post
     set_handler(lambda req: _ok_response())
     lm = OpenAICompatLanguageModel(
-        base_url="https://x", model="m", api_key="k",
-        default_max_tokens=999, default_temperature=0.7,
+        base_url="https://x",
+        model="m",
+        api_key="k",
+        default_max_tokens=999,
+        default_temperature=0.7,
     )
     # No override → defaults
     lm.complete(system="s", user="u")
@@ -190,9 +189,7 @@ def test_complete_raises_on_timeout(monkeypatch) -> None:
         raise httpx.TimeoutException("timeout")
 
     monkeypatch.setattr("httpx.post", boom)
-    lm = OpenAICompatLanguageModel(
-        base_url="https://x", model="m", api_key="k", timeout=0.1
-    )
+    lm = OpenAICompatLanguageModel(base_url="https://x", model="m", api_key="k", timeout=0.1)
     with pytest.raises(LanguageModelError, match="timeout"):
         lm.complete(system="s", user="u")
 

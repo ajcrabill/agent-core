@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -348,9 +347,7 @@ def _format_policy_as_correction(
 
     action = match.get("action_type") or match.get("workflow_name", "")
     if sclass_str and action:
-        pieces.append(
-            f"For {action} actions involving {sclass_str} stakeholders:"
-        )
+        pieces.append(f"For {action} actions involving {sclass_str} stakeholders:")
     elif sclass_str:
         pieces.append(f"For actions involving {sclass_str} stakeholders:")
     elif action:
@@ -400,9 +397,7 @@ _AUTONOMY_BIAS_MAP = {
 }
 
 
-def _import_yaml_configs(
-    state: MigratedState, config_dir: Path, *, settings_preset: str
-) -> None:
+def _import_yaml_configs(state: MigratedState, config_dir: Path, *, settings_preset: str) -> None:
     """Load each YAML config; map what we can to settings, dump the rest as Thoughts."""
     for yaml_path in sorted(config_dir.glob("*.yaml")):
         try:
@@ -443,16 +438,14 @@ def _import_yaml_configs(
         )
 
 
-def _apply_preferences(
-    state: MigratedState, data: dict, *, settings_preset: str
-) -> None:
+def _apply_preferences(state: MigratedState, data: dict, *, settings_preset: str) -> None:
     prefs = data.get("preferences", {}) if isinstance(data, dict) else {}
     autonomy_bias = prefs.get("autonomy_bias", {}).get("default")
     if autonomy_bias and autonomy_bias in _AUTONOMY_BIAS_MAP:
         # Esby's preference wins over the CLI --preset arg if explicit
-        state.settings_overlay.setdefault("autonomy", {})["default_policy"] = (
-            _AUTONOMY_BIAS_MAP[autonomy_bias]
-        )
+        state.settings_overlay.setdefault("autonomy", {})["default_policy"] = _AUTONOMY_BIAS_MAP[
+            autonomy_bias
+        ]
 
 
 def _apply_autonomy_matrix(state: MigratedState, data: dict) -> None:

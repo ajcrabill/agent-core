@@ -26,12 +26,11 @@ jobs:
       - name: Sync dependencies
         run: uv sync
 
-      - name: Lint (ruff)
-        run: uv run ruff check .
+      - name: Lint (ruff) — agent-core only
+        run: uv run ruff check packages/agent-core/
 
-      - name: Format check (ruff)
-        run: uv run ruff format --check .
+      - name: Format check (ruff) — agent-core only
+        run: uv run ruff format --check packages/agent-core/
 
-      # Tests will be enabled when Sprint 1 ships real code.
-      # - name: Test
-      #   run: uv run pytest
+      - name: Test
+        run: uv run pytest packages/agent-core/ -x --tb=short

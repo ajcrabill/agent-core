@@ -9,7 +9,6 @@ through, the relevant test here will fail.
 from __future__ import annotations
 
 import pytest
-
 from agent_core.actions.digest import DailyDigestBuilder
 from agent_core.content_creation.calibration import CalibrationManager
 from agent_core.content_creation.synthesis import SyntheticBattery

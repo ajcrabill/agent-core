@@ -50,11 +50,11 @@ class SamplingPolicy:
     def from_settings(
         cls,
         settings: object,
-        db: "Database",
+        db: Database,
         *,
         bootstrap_count: int = 5,
-        rng: "Callable[[], float] | None" = None,
-    ) -> "SamplingPolicy":
+        rng: Callable[[], float] | None = None,
+    ) -> SamplingPolicy:
         """Build from ``AgentSettings``: reads ``settings.quality.audit_sample_rate``
         and ``settings.quality.low_confidence_audit_threshold``."""
         q = settings.quality  # type: ignore[attr-defined]

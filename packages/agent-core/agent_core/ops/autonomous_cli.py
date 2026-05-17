@@ -81,9 +81,7 @@ def run_command(config_path, db_url, interval, once):
 
     resolved_url = db_url or mgr.get("storage.url")
     if not resolved_url:
-        console.print(
-            "[red]no db url:[/red] pass --db-url or set storage.url in agent.yml"
-        )
+        console.print("[red]no db url:[/red] pass --db-url or set storage.url in agent.yml")
         raise click.exceptions.Exit(1)
     db = Database(resolved_url)
 
@@ -96,9 +94,7 @@ def run_command(config_path, db_url, interval, once):
     if once:
         console.print("[dim]running one tick (--once)…[/dim]")
     else:
-        console.print(
-            f"[dim]agent loop running (every {interval}s). Ctrl-C to stop.[/dim]"
-        )
+        console.print(f"[dim]agent loop running (every {interval}s). Ctrl-C to stop.[/dim]")
 
     tick_count = run_loop(
         db=db,
@@ -196,9 +192,7 @@ def digest_command(
 
     resolved_url = db_url or mgr.get("storage.url")
     if not resolved_url:
-        console.print(
-            "[red]no db url:[/red] pass --db-url or set storage.url in agent.yml"
-        )
+        console.print("[red]no db url:[/red] pass --db-url or set storage.url in agent.yml")
         raise click.exceptions.Exit(1)
     db = Database(resolved_url)
 
@@ -231,10 +225,7 @@ def digest_command(
             send_when_empty=send_when_empty,
         )
         emoji = "[green]✓[/green]" if report.sent else "[yellow]∅[/yellow]"
-        console.print(
-            f"{emoji} digest delivery: {report.reason} "
-            f"(transport={report.transport})"
-        )
+        console.print(f"{emoji} digest delivery: {report.reason} (transport={report.transport})")
         if report.last_sent_at:
             console.print(f"[dim]last sent: {report.last_sent_at.isoformat()}[/dim]")
         if not report.sent and report.next_eligible_at:

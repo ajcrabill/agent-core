@@ -85,9 +85,9 @@ def capture(request: Request, body: CaptureBody) -> CaptureOut:
     store: OpenBrainStore = request.app.state.openbrain
     # Detect existence pre-capture so the response can tell the UI whether
     # this was a new thought or a dedup hit (UX surfaces this differently).
-    from agent_core.openbrain.store import _fingerprint  # type: ignore[attr-defined]
     from sqlmodel import select
 
+    from agent_core.openbrain.store import _fingerprint  # type: ignore[attr-defined]
     from agent_core.state.models import Thought
 
     fp = _fingerprint(body.content)
@@ -101,9 +101,7 @@ def capture(request: Request, body: CaptureBody) -> CaptureOut:
         source_uri=body.source_uri,
         source_title=body.source_title,
     )
-    return CaptureOut(
-        id=thought.id, fingerprint=thought.fingerprint or "", was_existing=existed
-    )
+    return CaptureOut(id=thought.id, fingerprint=thought.fingerprint or "", was_existing=existed)
 
 
 @router.post("/search", response_model=list[HitOut])

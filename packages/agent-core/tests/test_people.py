@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_core.people import (
     PeopleStore,
     PersonNotFoundError,
@@ -11,7 +10,6 @@ from agent_core.people import (
 )
 from agent_core.settings import AgentSettings
 from agent_core.state import AutonomyOverride, Database, Person
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 

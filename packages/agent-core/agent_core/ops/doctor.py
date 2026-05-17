@@ -46,10 +46,10 @@ logger = logging.getLogger(__name__)
 class CheckStatus(StrEnum):
     """Outcome of a single check.
 
-      ok       — feature works as expected
-      warn     — feature works but something to know (e.g. degraded)
-      fail     — feature is broken; user action needed
-      skipped  — feature isn't configured on this install; not applicable
+    ok       — feature works as expected
+    warn     — feature works but something to know (e.g. degraded)
+    fail     — feature is broken; user action needed
+    skipped  — feature isn't configured on this install; not applicable
     """
 
     ok = "ok"
@@ -96,7 +96,7 @@ class DoctorReport:
         return any(r.status == CheckStatus.warn for r in self.results)
 
     def by_status(self) -> dict[CheckStatus, int]:
-        out: dict[CheckStatus, int] = {s: 0 for s in CheckStatus}
+        out: dict[CheckStatus, int] = dict.fromkeys(CheckStatus, 0)
         for r in self.results:
             out[r.status] += 1
         return out
@@ -201,9 +201,7 @@ class MigrationsAtHeadCheck:
             return CheckResult(
                 name=self.name,
                 status=CheckStatus.warn,
-                message=(
-                    f"current={current}, head={head} — run `alembic upgrade head`"
-                ),
+                message=(f"current={current}, head={head} — run `alembic upgrade head`"),
                 details={"current": current, "head": head},
             )
         except Exception as e:
@@ -250,9 +248,7 @@ class VaultPathCheck:
                 status=CheckStatus.warn,
                 message=f"vault not writable: {path}",
             )
-        return CheckResult(
-            name=self.name, status=CheckStatus.ok, message=f"ok at {path}"
-        )
+        return CheckResult(name=self.name, status=CheckStatus.ok, message=f"ok at {path}")
 
 
 class OllamaReachableCheck:
@@ -339,9 +335,7 @@ class NotificationsConfiguredCheck:
         n_transport = _settings_attr(ctx.settings, "notifications", "transport", default="none")
         n_topic = _settings_attr(ctx.settings, "notifications", "ntfy_topic", default=None)
         if not n_enabled:
-            return CheckResult(
-                name=self.name, status=CheckStatus.skipped, message="disabled"
-            )
+            return CheckResult(name=self.name, status=CheckStatus.skipped, message="disabled")
         if n_transport == "ntfy" and not n_topic:
             return CheckResult(
                 name=self.name,
@@ -447,11 +441,11 @@ def _alembic_head_revision() -> str | None:
     itself be a doctor-worthy problem, but is handled by the caller as a
     warn rather than a hard failure)."""
     try:
-        from alembic.config import Config
-        from alembic.script import ScriptDirectory
-
         # The package ships its own alembic.ini-equivalent next to migrations.
         from importlib.resources import files
+
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
 
         migrations_dir = files("agent_core.state.migrations")
         # Build a minimal Alembic Config in-memory pointing at the bundled

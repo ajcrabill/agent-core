@@ -31,7 +31,6 @@ from agent_core.state.models import (
     ObligationStatus,
 )
 
-
 # ── Internal pre-row dataclasses ───────────────────────────────────────────
 
 

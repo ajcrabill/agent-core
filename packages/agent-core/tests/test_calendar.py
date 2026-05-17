@@ -11,15 +11,13 @@ All tests use hand-rolled ICS bytes — no network. Coverage:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-
 from agent_core.settings import AgentSettings
 from agent_core.work.calendar import (
-    CalendarEvent,
-    CalendarFetchError,
     CalendarFetcher,
+    CalendarFetchError,
     _coerce_dt,
     _overlaps,
     _parse_and_expand,
@@ -28,8 +26,7 @@ from agent_core.work.calendar import (
     fetch_window,
 )
 
-
-UTC = timezone.utc
+UTC = UTC
 
 
 # ── Hand-rolled ICS fixtures ───────────────────────────────────────────────
@@ -40,9 +37,7 @@ def _ics(*events: str) -> bytes:
     body = (
         "BEGIN:VCALENDAR\r\n"
         "VERSION:2.0\r\n"
-        "PRODID:-//test//test//EN\r\n"
-        + "".join(events)
-        + "END:VCALENDAR\r\n"
+        "PRODID:-//test//test//EN\r\n" + "".join(events) + "END:VCALENDAR\r\n"
     )
     return body.encode()
 

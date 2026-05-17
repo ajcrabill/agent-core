@@ -64,8 +64,7 @@ class AutonomySettings(BaseModel):
         default=2,
         ge=1,
         description=(
-            "Auditor pulls a skill back from autonomous after this many "
-            "consecutive failures."
+            "Auditor pulls a skill back from autonomous after this many consecutive failures."
         ),
     )
     archive_instead_of_delete: bool = Field(

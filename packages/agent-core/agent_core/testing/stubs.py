@@ -25,7 +25,6 @@ from agent_core.state.models import (
     Plan,
 )
 
-
 # ── Plan + Step ─────────────────────────────────────────────────────────────
 
 
@@ -143,9 +142,7 @@ class StubDiffExtractor:
         narrative: str | None = None,
         skill: str | None = None,
     ) -> ProposedRule | None:
-        self.calls.append(
-            {"original": original, "corrected": corrected, "skill": skill}
-        )
+        self.calls.append({"original": original, "corrected": corrected, "skill": skill})
         if self.returns is None:
             return None
         if isinstance(self.returns, ProposedRule):

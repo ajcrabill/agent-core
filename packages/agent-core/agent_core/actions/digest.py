@@ -91,7 +91,7 @@ class DailyDigestBuilder:
         self.period_hours = period_hours
 
     @classmethod
-    def from_settings(cls, settings: object, db: Database) -> "DailyDigestBuilder":
+    def from_settings(cls, settings: object, db: Database) -> DailyDigestBuilder:
         """Build from ``AgentSettings``: reads ``settings.notifications.digest_period_hours``."""
         return cls(db, period_hours=settings.notifications.digest_period_hours)  # type: ignore[attr-defined]
 
@@ -160,9 +160,7 @@ class DailyDigestBuilder:
             triage_obs: dict[str, Obligation] = {}
             if triage_ob_ids:
                 rows = list(
-                    s.exec(
-                        select(Obligation).where(Obligation.id.in_(triage_ob_ids))
-                    ).all()
+                    s.exec(select(Obligation).where(Obligation.id.in_(triage_ob_ids))).all()
                 )
                 triage_obs = {ob.id: ob for ob in rows}
 
@@ -321,9 +319,7 @@ def _render_markdown(d: DailyDigest) -> str:
         lines.append("")
         for i in d.new_incidents:
             src = f" `source:{i['source']}`" if i.get("source") else ""
-            lines.append(
-                f"- **{i['title']}** _{i['severity']}_{src} `id:{i['id'][:8]}`"
-            )
+            lines.append(f"- **{i['title']}** _{i['severity']}_{src} `id:{i['id'][:8]}`")
         lines.append("")
 
     # Closures
@@ -465,7 +461,7 @@ def deliver_digest(
     *,
     db: Database,
     dispatcher,  # NotificationDispatcher (avoid circular import)
-    builder: "DailyDigestBuilder | None" = None,
+    builder: DailyDigestBuilder | None = None,
     period_hours: float | None = None,
     force: bool = False,
     bypass_floor: bool = False,
@@ -500,9 +496,7 @@ def deliver_digest(
 
     # Cadence gate
     last_sent = _last_digest_delivery(db)
-    next_eligible = (
-        last_sent + timedelta(hours=period_hours) if last_sent else None
-    )
+    next_eligible = last_sent + timedelta(hours=period_hours) if last_sent else None
     now = utcnow()
     if not force and last_sent is not None and now < next_eligible:  # type: ignore[operator]
         return DigestDeliveryReport(
@@ -593,9 +587,7 @@ def deliver_digest(
         s.commit()
 
     new_last_sent = now if ok else last_sent
-    new_next_eligible = (
-        new_last_sent + timedelta(hours=period_hours) if new_last_sent else None
-    )
+    new_next_eligible = new_last_sent + timedelta(hours=period_hours) if new_last_sent else None
     return DigestDeliveryReport(
         sent=ok,
         reason=reason,

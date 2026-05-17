@@ -103,9 +103,7 @@ def list_obligations(
     """List obligations on the board, optionally filtered by status + owner."""
     db = request.app.state.db
     with db.session() as s:
-        stmt = select(Obligation).order_by(
-            Obligation.priority.desc(), Obligation.created_at.desc()
-        )
+        stmt = select(Obligation).order_by(Obligation.priority.desc(), Obligation.created_at.desc())
         if status_ is not None:
             stmt = stmt.where(Obligation.status == status_)
         if owner is not None:
@@ -182,7 +180,9 @@ def patch_obligation(
 def delete_obligation(
     request: Request,
     obligation_id: str,
-    hard: Annotated[bool, Query(description="Bypass soft-archive (requires aggressive autonomy)")] = False,
+    hard: Annotated[
+        bool, Query(description="Bypass soft-archive (requires aggressive autonomy)")
+    ] = False,
 ) -> None:
     """Archive (soft per L23) or hard-delete an obligation.
 

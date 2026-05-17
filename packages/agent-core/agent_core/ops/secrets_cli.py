@@ -31,9 +31,7 @@ def _split_secret_path(dotted: str) -> tuple[str, str]:
         )
     namespace, key = dotted.split(".", 1)
     if not namespace or not key:
-        raise click.UsageError(
-            f"both namespace and key are required, got {dotted!r}"
-        )
+        raise click.UsageError(f"both namespace and key are required, got {dotted!r}")
     return namespace, key
 
 
@@ -105,10 +103,7 @@ def secrets_set(assignment, from_stdin):
     namespace, key = _split_secret_path(dotted)
     store = default_store()
     store.set(namespace, key, value)
-    console.print(
-        f"[green]✓[/green] stored {namespace}.{key} "
-        f"([dim]{type(store).__name__}[/dim])"
-    )
+    console.print(f"[green]✓[/green] stored {namespace}.{key} ([dim]{type(store).__name__}[/dim])")
 
 
 @secrets_group.command(name="get")
@@ -142,10 +137,9 @@ def secrets_delete(dotted, yes):
     from agent_core.secrets import default_store
 
     namespace, key = _split_secret_path(dotted)
-    if not yes:
-        if not click.confirm(f"delete {namespace}.{key}?"):
-            console.print("[dim]aborted[/dim]")
-            return
+    if not yes and not click.confirm(f"delete {namespace}.{key}?"):
+        console.print("[dim]aborted[/dim]")
+        return
     store = default_store()
     store.delete(namespace, key)
     console.print(f"[green]✓[/green] deleted {namespace}.{key}")

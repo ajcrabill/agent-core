@@ -125,11 +125,11 @@ class SyntheticBattery:
     def from_settings(
         cls,
         settings: object,
-        db: "Database",
+        db: Database,
         *,
-        exemplar_store: "ExemplarStore | None" = None,
-        iterations: "Iterations | None" = None,
-    ) -> "SyntheticBattery":
+        exemplar_store: ExemplarStore | None = None,
+        iterations: Iterations | None = None,
+    ) -> SyntheticBattery:
         """Build from ``AgentSettings``: reads ``settings.learning.synthetic_min_*``."""
         lc = settings.learning  # type: ignore[attr-defined]
         return cls(

@@ -164,9 +164,7 @@ __all__ = ["NoopTransport", "NotificationTransport", "NtfyTransport"]
 # ── Internal: tiny helper for tests/mocks that want JSON inspection ────────
 
 
-def _serialize_for_test(
-    title: str, body: str, *, priority: int, tags: list[str] | None
-) -> str:
+def _serialize_for_test(title: str, body: str, *, priority: int, tags: list[str] | None) -> str:
     """Stable JSON shape an in-memory test transport can write to disk."""
     return json.dumps(
         {"title": title, "body": body, "priority": priority, "tags": tags or []},

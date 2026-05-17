@@ -31,7 +31,7 @@ import imaplib
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import Message
 from typing import TYPE_CHECKING, Any
 
@@ -39,7 +39,6 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from agent_core.state.db import Database
-    from agent_core.state.models import Obligation
 
 
 # ── Data ────────────────────────────────────────────────────────────────────
@@ -121,7 +120,7 @@ class EmailFetcher:
     # ── Factory ─────────────────────────────────────────────────────────────
 
     @classmethod
-    def from_settings(cls, settings: Any, secrets: Any) -> "EmailFetcher":
+    def from_settings(cls, settings: Any, secrets: Any) -> EmailFetcher:
         """Build from ``AgentSettings`` + secret store.
 
         Raises ``EmailFetchError`` if email.imap.enabled is False or any
@@ -135,9 +134,7 @@ class EmailFetcher:
                 "`dcos settings set email.imap.enabled=true`"
             )
         if not imap.host or not imap.username:
-            raise EmailFetchError(
-                "email.imap.host and email.imap.username must be set"
-            )
+            raise EmailFetchError("email.imap.host and email.imap.username must be set")
         password = secrets.get("email", imap.password_secret_key)
         if not password:
             raise EmailFetchError(
@@ -162,13 +159,9 @@ class EmailFetcher:
     def _connect(self) -> imaplib.IMAP4:
         """Open a fresh IMAP connection. Caller is responsible for logout."""
         if self.ssl:
-            conn = imaplib.IMAP4_SSL(
-                host=self.host, port=self.port, timeout=self.timeout_seconds
-            )
+            conn = imaplib.IMAP4_SSL(host=self.host, port=self.port, timeout=self.timeout_seconds)
         else:
-            conn = imaplib.IMAP4(
-                host=self.host, port=self.port, timeout=self.timeout_seconds
-            )
+            conn = imaplib.IMAP4(host=self.host, port=self.port, timeout=self.timeout_seconds)
         conn.login(self.username, self.password)
         return conn
 
@@ -229,18 +222,16 @@ class EmailFetcher:
                         continue
                     try:
                         msg = email.message_from_bytes(body_bytes)
-                        parsed = _parse_message(
-                            msg, uid=current_uid, flags=current_flags
-                        )
+                        parsed = _parse_message(msg, uid=current_uid, flags=current_flags)
                         out.append(parsed)
                     except Exception as e:
                         logger.warning("failed to parse uid=%s: %s", current_uid, e)
                 # Non-tuple entries (b')' separators) are ignored.
         finally:
-            try:
+            import contextlib
+
+            with contextlib.suppress(Exception):
                 conn.logout()
-            except Exception:  # pragma: no cover — defensive
-                pass
 
         return out
 
@@ -251,7 +242,7 @@ class EmailFetcher:
 def fetch_and_capture(
     *,
     fetcher: EmailFetcher,
-    db: "Database",
+    db: Database,
     limit: int = 50,
 ) -> FetchReport:
     """Fetch unread → dedupe by Message-ID → capture as obligations.
@@ -263,9 +254,10 @@ def fetch_and_capture(
 
     Returns a FetchReport. Never raises — errors land in ``report.errors``.
     """
+    from sqlmodel import select
+
     from agent_core.state.models import ObligationEvent, ObligationEventKind
     from agent_core.work.inbound import InboundCapture
-    from sqlmodel import select
 
     report = FetchReport()
 
@@ -364,7 +356,7 @@ def _parse_message(msg: Message, *, uid: int, flags: list[str]) -> FetchedEmail:
             received_at = email.utils.parsedate_to_datetime(date_hdr)
             # Normalize to UTC-aware
             if received_at and received_at.tzinfo is None:
-                received_at = received_at.replace(tzinfo=timezone.utc)
+                received_at = received_at.replace(tzinfo=UTC)
         except (TypeError, ValueError):
             pass
 
@@ -424,7 +416,9 @@ def _decode_part(part: Message) -> str:
 
 def _strip_html(html: str) -> str:
     """Crude HTML → text. We don't ship beautifulsoup just for this."""
-    no_scripts = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+    no_scripts = re.sub(
+        r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.DOTALL | re.IGNORECASE
+    )
     no_tags = re.sub(r"<[^>]+>", " ", no_scripts)
     return re.sub(r"\s+", " ", no_tags)
 

@@ -32,7 +32,7 @@ import logging
 import smtplib
 import ssl
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 from typing import TYPE_CHECKING, Any
@@ -41,7 +41,6 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from agent_core.state.db import Database
-    from agent_core.state.models import Obligation, ObligationEvent
 
 
 # ── Errors ──────────────────────────────────────────────────────────────────
@@ -106,9 +105,7 @@ class EmailSender:
         if not from_address:
             raise EmailSendError("EmailSender requires from_address")
         if ssl_on_connect and starttls:
-            raise EmailSendError(
-                "ssl_on_connect and starttls are mutually exclusive — pick one"
-            )
+            raise EmailSendError("ssl_on_connect and starttls are mutually exclusive — pick one")
         self.host = host
         self.port = port
         self.ssl_on_connect = ssl_on_connect
@@ -120,7 +117,7 @@ class EmailSender:
         self.timeout_seconds = timeout_seconds
 
     @classmethod
-    def from_settings(cls, settings: Any, secrets: Any) -> "EmailSender":
+    def from_settings(cls, settings: Any, secrets: Any) -> EmailSender:
         smtp = settings.email.smtp
         if not smtp.enabled:
             raise EmailSendError(
@@ -128,9 +125,7 @@ class EmailSender:
                 "`dcos settings set email.smtp.enabled=true`"
             )
         if not smtp.host or not smtp.username or not smtp.from_address:
-            raise EmailSendError(
-                "email.smtp.host, .username, and .from_address must all be set"
-            )
+            raise EmailSendError("email.smtp.host, .username, and .from_address must all be set")
         password = secrets.get("email", smtp.password_secret_key)
         if not password:
             raise EmailSendError(
@@ -171,7 +166,9 @@ class EmailSender:
         survives in the recipient's mail client.
         """
         msg = EmailMessage()
-        msg["From"] = formataddr((self.from_name, self.from_address)) if self.from_name else self.from_address
+        msg["From"] = (
+            formataddr((self.from_name, self.from_address)) if self.from_name else self.from_address
+        )
         msg["To"] = to
         msg["Subject"] = subject
         msg["Date"] = formatdate(localtime=True)
@@ -211,7 +208,7 @@ class EmailSender:
 
 def compose_drafts(
     *,
-    db: "Database",
+    db: Database,
     settings: Any,
     language_model: Any | None = None,
     limit: int = 10,
@@ -228,6 +225,8 @@ def compose_drafts(
     body as the brief + thread context. Store the result as an
     ObligationEvent so future ticks skip and the user can review/approve.
     """
+    from sqlmodel import select
+
     from agent_core.skills import (
         LanguageModelError,
         SkillContext,
@@ -242,7 +241,6 @@ def compose_drafts(
         ObligationSource,
         ObligationStatus,
     )
-    from sqlmodel import select
 
     settings_obj = getattr(settings, "settings", settings)
     report = ComposeReport()
@@ -271,11 +269,7 @@ def compose_drafts(
 
         ob_ids = [ob.id for ob in candidates]
         events = list(
-            s.exec(
-                select(ObligationEvent).where(
-                    ObligationEvent.obligation_id.in_(ob_ids)
-                )
-            ).all()
+            s.exec(select(ObligationEvent).where(ObligationEvent.obligation_id.in_(ob_ids))).all()
         )
 
         triage_marked_draft: set[str] = set()
@@ -289,20 +283,14 @@ def compose_drafts(
                 and payload.get("action") == "draft"
             ):
                 triage_marked_draft.add(ev.obligation_id)
-            if (
-                ev.kind == ObligationEventKind.comment
-                and payload.get("type") in ("draft", "sent")
-            ):
+            if ev.kind == ObligationEventKind.comment and payload.get("type") in ("draft", "sent"):
                 already_drafted.add(ev.obligation_id)
 
     fresh = [
-        ob for ob in candidates
-        if ob.id in triage_marked_draft and ob.id not in already_drafted
+        ob for ob in candidates if ob.id in triage_marked_draft and ob.id not in already_drafted
     ]
     report.candidates = len(fresh) + len([o for o in candidates if o.id in already_drafted])
-    report.skipped_already_drafted = len(
-        [o for o in candidates if o.id in already_drafted]
-    )
+    report.skipped_already_drafted = len([o for o in candidates if o.id in already_drafted])
 
     if not fresh:
         return report
@@ -334,9 +322,7 @@ def compose_drafts(
             ctx,
         )
         if not outcome.succeeded:
-            report.errors.append(
-                f"compose {ob.id[:8]}: skill failed: {outcome.error}"
-            )
+            report.errors.append(f"compose {ob.id[:8]}: skill failed: {outcome.error}")
             continue
 
         result = outcome.result
@@ -371,7 +357,7 @@ def compose_drafts(
 
 def send_draft(
     *,
-    db: "Database",
+    db: Database,
     sender: EmailSender,
     obligation_id: str,
 ) -> SendReport:
@@ -382,13 +368,14 @@ def send_draft(
     returned by the server. Idempotent: if already sent, returns
     ``already_sent`` without re-shipping.
     """
+    from sqlmodel import select
+
     from agent_core.state.models import (
         Obligation,
         ObligationEvent,
         ObligationEventKind,
         ObligationStatus,
     )
-    from sqlmodel import select
 
     with db.session() as s:
         ob = s.get(Obligation, obligation_id)
@@ -462,7 +449,7 @@ def send_draft(
             error=str(e),
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     with db.session() as s:
         ob = s.get(Obligation, obligation_id)
         prior_status = ob.status
@@ -525,9 +512,7 @@ def _extract_subject(title: str) -> str:
     return subject
 
 
-def _extract_original_message_id(
-    events: list, obligation_id: str
-) -> str | None:
+def _extract_original_message_id(events: list, obligation_id: str) -> str | None:
     """Pull the original incoming Message-ID from the 'created' event payload.
 
     InboundCapture.capture_email writes payload.message_id at creation time.

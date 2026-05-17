@@ -13,12 +13,10 @@ Two layers:
 from __future__ import annotations
 
 import email
-from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import pytest
-
 from agent_core.settings import AgentSettings
 from agent_core.state.db import Database
 from agent_core.state.models import (
@@ -29,11 +27,8 @@ from agent_core.state.models import (
     ObligationStatus,
 )
 from agent_core.work.email_fetch import (
-    EmailFetchError,
     EmailFetcher,
-    FetchedEmail,
-    _decode_part,
-    _extract_body,
+    EmailFetchError,
     _parse_flags,
     _parse_message,
     _parse_uid,
@@ -41,7 +36,6 @@ from agent_core.work.email_fetch import (
     fetch_and_capture,
 )
 from sqlmodel import select
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -250,9 +244,7 @@ def test_from_settings_builds_fetcher_when_complete():
     s.email.imap.enabled = True
     s.email.imap.host = "imap.example.com"
     s.email.imap.username = "u@example.com"
-    fetcher = EmailFetcher.from_settings(
-        s, _FakeSecrets({"email": {"imap_password": "secret"}})
-    )
+    fetcher = EmailFetcher.from_settings(s, _FakeSecrets({"email": {"imap_password": "secret"}}))
     assert fetcher.host == "imap.example.com"
     assert fetcher.username == "u@example.com"
     assert fetcher.password == "secret"
@@ -313,9 +305,7 @@ def _patch_fetcher_connect(monkeypatch, fake: _FakeIMAP):
 
 
 def test_fetch_unread_returns_empty_on_no_unseen(monkeypatch):
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
     fake = _FakeIMAP(search_uids=[], messages={})
     _patch_fetcher_connect(monkeypatch, fake)
     assert fetcher.fetch_unread() == []
@@ -323,9 +313,7 @@ def test_fetch_unread_returns_empty_on_no_unseen(monkeypatch):
 
 
 def test_fetch_unread_returns_parsed_message(monkeypatch):
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
     fake = _FakeIMAP(
         search_uids=[42],
         messages={
@@ -349,9 +337,7 @@ def test_fetch_unread_returns_parsed_message(monkeypatch):
 
 
 def test_fetch_unread_orders_oldest_first(monkeypatch):
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
     fake = _FakeIMAP(
         search_uids=[5, 1, 3],
         messages={
@@ -367,9 +353,7 @@ def test_fetch_unread_orders_oldest_first(monkeypatch):
 
 
 def test_fetch_unread_respects_limit(monkeypatch):
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
     fake = _FakeIMAP(
         search_uids=[1, 2, 3, 4, 5],
         messages={i: _msg(subject=f"m{i}", message_id=f"<m{i}@e.com>") for i in range(1, 6)},
@@ -401,9 +385,7 @@ def test_fetch_unread_writeable_when_mark_read_true(monkeypatch):
 
 
 def test_fetch_unread_returns_empty_on_connect_failure(monkeypatch):
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
 
     def _boom(self):
         raise OSError("connection refused")
@@ -417,9 +399,7 @@ def test_fetch_unread_returns_empty_on_connect_failure(monkeypatch):
 
 def test_fetch_and_capture_creates_inbox_email_obligations(monkeypatch):
     db = _db()
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
     fake = _FakeIMAP(
         search_uids=[1, 2],
         messages={
@@ -447,9 +427,7 @@ def test_fetch_and_capture_creates_inbox_email_obligations(monkeypatch):
 def test_fetch_and_capture_dedupes_by_message_id(monkeypatch):
     """Second call with same Message-IDs should skip — no double capture."""
     db = _db()
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
     fake = _FakeIMAP(
         search_uids=[1],
         messages={1: _msg(message_id="<dup@e.com>", subject="first")},
@@ -475,9 +453,7 @@ def test_fetch_and_capture_records_message_id_in_event_payload(monkeypatch):
     """The dedup logic relies on payload.message_id — make sure
     InboundCapture is actually writing it."""
     db = _db()
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
     fake = _FakeIMAP(
         search_uids=[1],
         messages={1: _msg(message_id="<traceable@e.com>", subject="t")},
@@ -489,9 +465,7 @@ def test_fetch_and_capture_records_message_id_in_event_payload(monkeypatch):
     with db.session() as s:
         events = list(
             s.exec(
-                select(ObligationEvent).where(
-                    ObligationEvent.kind == ObligationEventKind.created
-                )
+                select(ObligationEvent).where(ObligationEvent.kind == ObligationEventKind.created)
             ).all()
         )
     assert len(events) == 1
@@ -502,9 +476,7 @@ def test_fetch_and_capture_handles_message_without_id(monkeypatch):
     """A message with no Message-ID still gets captured (it's rare but
     legal); duplicate risk is acknowledged."""
     db = _db()
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
     fake = _FakeIMAP(
         search_uids=[1],
         messages={1: _msg(message_id=None, subject="anonymous")},
@@ -517,9 +489,7 @@ def test_fetch_and_capture_handles_message_without_id(monkeypatch):
 
 def test_fetch_and_capture_handles_empty_inbox(monkeypatch):
     db = _db()
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
     fake = _FakeIMAP(search_uids=[], messages={})
     _patch_fetcher_connect(monkeypatch, fake)
     report = fetch_and_capture(fetcher=fetcher, db=db)
@@ -530,9 +500,7 @@ def test_fetch_and_capture_handles_empty_inbox(monkeypatch):
 def test_fetch_and_capture_swallows_connection_errors(monkeypatch):
     """Connection failure surfaces as an empty report, not a crash."""
     db = _db()
-    fetcher = EmailFetcher(
-        host="imap.example.com", username="u@e.com", password="x"
-    )
+    fetcher = EmailFetcher(host="imap.example.com", username="u@e.com", password="x")
 
     def _boom(self):
         raise OSError("dns failure")

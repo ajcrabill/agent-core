@@ -158,11 +158,11 @@ class MaintenanceScan:
     def from_settings(
         cls,
         settings: object,
-        db: "Database",
+        db: Database,
         *,
-        store: "LearningStore | None" = None,
-        firings: "RuleFirings | None" = None,
-    ) -> "MaintenanceScan":
+        store: LearningStore | None = None,
+        firings: RuleFirings | None = None,
+    ) -> MaintenanceScan:
         """Build from ``AgentSettings``: reads ``settings.learning.maintenance_*``."""
         lc = settings.learning  # type: ignore[attr-defined]
         return cls(

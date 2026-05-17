@@ -19,7 +19,6 @@ from pydantic import BaseModel, Field
 
 from agent_core.skills import SeedRule, SkillContext, SkillResult
 
-
 # ── Schemas ────────────────────────────────────────────────────────────────
 
 
@@ -85,8 +84,7 @@ class DocumentCreator:
     seed_rules: list[SeedRule] = [
         SeedRule(
             correction=(
-                "Lead with what the reader needs to know. Save background "
-                "for later paragraphs."
+                "Lead with what the reader needs to know. Save background for later paragraphs."
             ),
             skill_tags=["document-creator"],
         ),
@@ -108,9 +106,7 @@ class DocumentCreator:
 
     def execute(self, input: DocumentCreatorInput, context: SkillContext) -> SkillResult:
         if context.language_model is None:
-            raise RuntimeError(
-                "document-creator requires a LanguageModel in the SkillContext"
-            )
+            raise RuntimeError("document-creator requires a LanguageModel in the SkillContext")
 
         # Optional grounding from openbrain.
         references: list[dict[str, Any]] = []
@@ -139,12 +135,8 @@ class DocumentCreator:
                     grounded_lines
                 )
 
-        length_hint = _LENGTH_GUIDANCE.get(
-            input.length_target, _LENGTH_GUIDANCE["standard"]
-        )
-        audience_hint = (
-            f"\nAudience: {input.audience}" if input.audience else ""
-        )
+        length_hint = _LENGTH_GUIDANCE.get(input.length_target, _LENGTH_GUIDANCE["standard"])
+        audience_hint = f"\nAudience: {input.audience}" if input.audience else ""
         extra_hint = (
             f"\n\nAdditional context to use:\n{input.additional_context}"
             if input.additional_context
@@ -176,9 +168,7 @@ class DocumentCreator:
             actual_words=word_count,
         )
 
-        output = DocumentCreatorOutput(
-            title=input.title, body=body, word_count=word_count
-        )
+        output = DocumentCreatorOutput(title=input.title, body=body, word_count=word_count)
         return SkillResult(
             output=output,
             confidence=confidence,

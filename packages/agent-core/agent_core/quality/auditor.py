@@ -72,14 +72,14 @@ class QualityAuditor:
     def from_settings(
         cls,
         settings: object,
-        db: "Database",
-        primary_auditor: "AuditorModel",
+        db: Database,
+        primary_auditor: AuditorModel,
         *,
-        meta_auditor: "AuditorModel | None" = None,
+        meta_auditor: AuditorModel | None = None,
         meta_audit_every_n: int = 10,
         primary_auditor_model_name: str = "primary-auditor",
         meta_auditor_model_name: str = "meta-auditor",
-    ) -> "QualityAuditor":
+    ) -> QualityAuditor:
         """Build from ``AgentSettings``: reads ``settings.quality.*`` and
         ``settings.autonomy.auto_undelegate_after_n_failures``."""
         q = settings.quality  # type: ignore[attr-defined]

@@ -605,7 +605,7 @@ def _seed_closed_obligation(db) -> None:
 
 
 def _make_dispatcher(*, urgency_floor=None, enabled=True):
-    from agent_core.notifications import NotificationDispatcher, NoopTransport, Urgency
+    from agent_core.notifications import NoopTransport, NotificationDispatcher, Urgency
 
     floor = urgency_floor if urgency_floor is not None else Urgency.critical
     return NotificationDispatcher(NoopTransport(), enabled=enabled, urgency_floor=floor)
@@ -620,9 +620,7 @@ class _RecordingTransport:
         self.calls: list[dict] = []
 
     def send(self, title, body, *, priority=3, tags=None):
-        self.calls.append(
-            {"title": title, "body": body, "priority": priority, "tags": tags or []}
-        )
+        self.calls.append({"title": title, "body": body, "priority": priority, "tags": tags or []})
         return True
 
 
@@ -635,9 +633,7 @@ def test_deliver_digest_force_send_writes_runlog_with_success_true():
     _seed_closed_obligation(db)
     dispatcher = _make_dispatcher()  # critical floor
 
-    report = deliver_digest(
-        db=db, dispatcher=dispatcher, force=True, bypass_floor=True
-    )
+    report = deliver_digest(db=db, dispatcher=dispatcher, force=True, bypass_floor=True)
 
     assert report.sent
     assert report.reason == "sent"

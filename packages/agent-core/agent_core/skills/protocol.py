@@ -20,7 +20,6 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
-
 # ── LanguageModel Protocol ──────────────────────────────────────────────────
 
 
@@ -93,8 +92,8 @@ class Skill(Protocol):
     def execute(
         self,
         input: BaseModel,  # noqa: A002 — matches the schema attr name
-        context: "SkillContext",  # forward ref; defined in context.py
-    ) -> "SkillResult": ...
+        context: SkillContext,  # forward ref; defined in context.py
+    ) -> SkillResult: ...
 
 
 __all__ = ["LanguageModel", "SeedRule", "Skill"]

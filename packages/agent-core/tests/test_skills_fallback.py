@@ -12,17 +12,13 @@ provider != stub.
 from __future__ import annotations
 
 import pytest
-
 from agent_core.settings import AgentSettings
 from agent_core.skills import (
     CompletionResponse,
     FallbackLanguageModel,
     LanguageModelError,
-    StubLanguageModel,
-    ToolCall,
     language_model_from_settings,
 )
-
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 

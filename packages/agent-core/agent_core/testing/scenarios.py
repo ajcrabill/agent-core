@@ -21,7 +21,6 @@ from agent_core.state.models import (
 from agent_core.testing.agentbed import AgentTestBed
 from agent_core.work.inbound import InboundCapture
 
-
 # ── Inbound capture ────────────────────────────────────────────────────────
 
 

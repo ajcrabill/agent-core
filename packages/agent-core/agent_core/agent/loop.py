@@ -119,12 +119,12 @@ class AgentLoop:
     def from_settings(
         cls,
         settings: object,
-        db: "Database",
-        context_loader: "ContextLoader",
-        plan_developer: "PlanDeveloper",
-        step_executor: "StepExecutor",
-        completion_verifier: "CompletionVerifier",
-    ) -> "AgentLoop":
+        db: Database,
+        context_loader: ContextLoader,
+        plan_developer: PlanDeveloper,
+        step_executor: StepExecutor,
+        completion_verifier: CompletionVerifier,
+    ) -> AgentLoop:
         """Build from ``AgentSettings``: reads ``settings.runtime.max_obligations_per_tick``.
 
         Note: ``max_ticks_safety_cap`` from settings is not stored on the

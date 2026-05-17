@@ -8,16 +8,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import yaml
-from click.testing import CliRunner
-
 from agent_core.ops.cli import (
     backup_command,
     doctor_command,
     restore_command,
     setup_command,
 )
-
+from click.testing import CliRunner
 
 # ── doctor ──────────────────────────────────────────────────────────────────
 
@@ -54,9 +51,7 @@ def test_backup_requires_db_url(tmp_path: Path) -> None:
 
 def test_restore_requires_db_url(tmp_path: Path) -> None:
     src = tmp_path / "backup.json"
-    src.write_text(
-        json.dumps({"manifest": {"format_version": 1, "tables": {}}, "tables": {}})
-    )
+    src.write_text(json.dumps({"manifest": {"format_version": 1, "tables": {}}, "tables": {}}))
     runner = CliRunner()
     result = runner.invoke(restore_command, [str(src), "--yes"])
     assert result.exit_code != 0
@@ -106,9 +101,7 @@ def test_restore_aborts_without_yes_or_input(tmp_path: Path) -> None:
     Database.sqlite(db).create_all()
 
     backup = tmp_path / "b.json"
-    backup.write_text(
-        json.dumps({"manifest": {"format_version": 1, "tables": {}}, "tables": {}})
-    )
+    backup.write_text(json.dumps({"manifest": {"format_version": 1, "tables": {}}, "tables": {}}))
 
     runner = CliRunner()
     result = runner.invoke(

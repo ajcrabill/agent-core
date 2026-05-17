@@ -6,14 +6,11 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from agent_core.ops.wizard import (
     SetupWizard,
     WizardValidationError,
     dict_io,
 )
-from agent_core.settings import AgentSettings
-
 
 # ── Tier 1 ─────────────────────────────────────────────────────────────────
 

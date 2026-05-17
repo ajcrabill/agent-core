@@ -146,9 +146,7 @@ def build_context_prompt(
             content = getattr(hit.thought, "content", "")[:300]
             sim = round(getattr(hit, "similarity", 0), 3)
             sources = getattr(hit, "sources", [])
-            src_str = (
-                f" (source: {sources[0].source_kind})" if sources else ""
-            )
+            src_str = f" (source: {sources[0].source_kind})" if sources else ""
             lines.append(f"[{i}]{src_str} (similarity={sim}) {content}")
         parts.append("\n".join(lines))
 
@@ -220,10 +218,7 @@ def run_turn(
     # Tool-use path (Sprint 24): if the LM advertises complete_with_tools
     # and the session enables tools, drive a tool loop. Otherwise fall
     # through to the legacy single-shot completion (history flattened).
-    use_tools = (
-        session.enable_tools
-        and hasattr(language_model, "complete_with_tools")
-    )
+    use_tools = session.enable_tools and hasattr(language_model, "complete_with_tools")
     if use_tools:
         from agent_core.skills.tools import (
             ToolContext,
@@ -231,12 +226,8 @@ def run_turn(
             run_tool_loop,
         )
 
-        history_messages = [
-            {"role": m.role, "content": m.content} for m in session.history
-        ]
-        tool_context = ToolContext(
-            db=db, openbrain=openbrain, calendar=calendar, settings=None
-        )
+        history_messages = [{"role": m.role, "content": m.content} for m in session.history]
+        tool_context = ToolContext(db=db, openbrain=openbrain, calendar=calendar, settings=None)
         reply = run_tool_loop(
             language_model=language_model,
             system=system,
@@ -251,9 +242,7 @@ def run_turn(
         # Legacy single-shot path. Flatten history into the user message
         # since the base Protocol takes only system + user.
         if session.history:
-            history_str = "\n\n".join(
-                f"{m.role.title()}: {m.content}" for m in session.history
-            )
+            history_str = "\n\n".join(f"{m.role.title()}: {m.content}" for m in session.history)
             user = f"{history_str}\n\nUser: {user_message}"
         else:
             user = user_message

@@ -6,8 +6,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-from click.testing import CliRunner
-
 from agent_core.settings import (
     PRESETS,
     AgentSettings,
@@ -18,7 +16,7 @@ from agent_core.settings import (
 )
 from agent_core.settings.cli import settings_group
 from agent_core.settings.manager import SettingsError
-
+from click.testing import CliRunner
 
 # ── Schema basics ──────────────────────────────────────────────────────────
 
@@ -33,12 +31,16 @@ def test_defaults_construct_cleanly() -> None:
 
 
 def test_invalid_choice_rejected() -> None:
-    with pytest.raises(Exception):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
         AgentSettings(autonomy={"default_policy": "yolo"})  # type: ignore[arg-type]
 
 
 def test_extra_field_rejected() -> None:
-    with pytest.raises(Exception):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
         AgentSettings(autonomy={"default_policy": "balanced", "totally_made_up": True})  # type: ignore[arg-type]
 
 
@@ -285,7 +287,9 @@ def test_cli_set_rejects_invalid(tmp_path: Path) -> None:
 def test_cli_reset_one(tmp_path: Path) -> None:
     p = tmp_path / "agent.yml"
     runner = CliRunner()
-    runner.invoke(settings_group, ["--config", str(p), "set", "learning.detector_strictness=strict"])
+    runner.invoke(
+        settings_group, ["--config", str(p), "set", "learning.detector_strictness=strict"]
+    )
     result = runner.invoke(
         settings_group, ["--config", str(p), "reset", "learning.detector_strictness"]
     )
@@ -345,7 +349,9 @@ def test_cli_doctor_clean(tmp_path: Path) -> None:
 def test_cli_doctor_lists_overrides(tmp_path: Path) -> None:
     p = tmp_path / "agent.yml"
     runner = CliRunner()
-    runner.invoke(settings_group, ["--config", str(p), "set", "learning.detector_strictness=strict"])
+    runner.invoke(
+        settings_group, ["--config", str(p), "set", "learning.detector_strictness=strict"]
+    )
     result = runner.invoke(settings_group, ["--config", str(p), "doctor"])
     assert result.exit_code == 0
     assert "learning.detector_strictness" in result.output

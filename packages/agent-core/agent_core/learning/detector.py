@@ -105,7 +105,7 @@ class HeuristicDetector:
         self.max_excerpt_chars = max_excerpt_chars
 
     @classmethod
-    def from_settings(cls, settings: object) -> "HeuristicDetector":
+    def from_settings(cls, settings: object) -> HeuristicDetector:
         """Build from ``AgentSettings``: reads ``settings.learning.detector_min_confidence``."""
         return cls(min_confidence=settings.learning.detector_min_confidence)  # type: ignore[attr-defined]
 

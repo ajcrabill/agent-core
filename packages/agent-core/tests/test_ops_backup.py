@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from agent_core.ops import (
     BackupFormatError,
     RestoreNotConfirmedError,
@@ -18,10 +17,9 @@ from agent_core.ops import (
     write_backup,
 )
 from agent_core.ops.backup import FORMAT_VERSION
-from agent_core.settings import AgentSettings, SettingsManager
+from agent_core.settings import AgentSettings
 from agent_core.state import Database
 from agent_core.state.models import Obligation, ObligationSource, ObligationStatus
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -105,9 +103,7 @@ def test_create_backup_excludes_identity_by_default(tmp_path: Path) -> None:
 
 def test_create_backup_includes_identity_when_explicitly_opted_in(tmp_path: Path) -> None:
     db = _db_with_data(tmp_path)
-    payload = create_backup(
-        db, include_identity=True, identity_public_key="abcd1234"
-    )
+    payload = create_backup(db, include_identity=True, identity_public_key="abcd1234")
     assert payload["manifest"]["includes_identity"] is True
     assert payload["identity"]["public_key"] == "abcd1234"
 
@@ -141,9 +137,7 @@ def test_read_backup_rejects_missing_manifest(tmp_path: Path) -> None:
 
 def test_read_backup_rejects_wrong_format_version(tmp_path: Path) -> None:
     bad = tmp_path / "bad.json"
-    bad.write_text(
-        json.dumps({"manifest": {"format_version": 999}, "tables": {}})
-    )
+    bad.write_text(json.dumps({"manifest": {"format_version": 999}, "tables": {}}))
     with pytest.raises(BackupFormatError, match="format_version"):
         read_backup(bad)
 

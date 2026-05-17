@@ -7,7 +7,6 @@ calls so we can assert on what would have been sent.
 from __future__ import annotations
 
 import pytest
-
 from agent_core.notifications import (
     Notification,
     NotificationDispatcher,
@@ -17,7 +16,6 @@ from agent_core.notifications import (
 )
 from agent_core.notifications.transports import NoopTransport, NotificationTransport
 from agent_core.settings import AgentSettings
-
 
 # ── In-memory transport for assertions ──────────────────────────────────────
 
@@ -30,9 +28,7 @@ class _RecordingTransport:
         self.succeed = succeed
 
     def send(self, title, body, *, priority=3, tags=None) -> bool:
-        self.calls.append(
-            {"title": title, "body": body, "priority": priority, "tags": tags or []}
-        )
+        self.calls.append({"title": title, "body": body, "priority": priority, "tags": tags or []})
         return self.succeed
 
 
@@ -159,7 +155,7 @@ def test_from_settings_ntfy_requires_topic() -> None:
 
 
 def test_from_settings_uses_urgency_floor() -> None:
-    rec = _RecordingTransport()
+    _RecordingTransport()
     s = AgentSettings(
         notifications={  # type: ignore[arg-type]
             "enabled": True,
@@ -180,9 +176,7 @@ def test_default_settings_keep_user_quiet() -> None:
     d = NotificationDispatcher.from_settings(s)
     assert isinstance(d.transport, NoopTransport)
     # Even a critical notification produces a 'disabled' drop.
-    result = d.notify(
-        Notification(title="anything", body="anything", urgency=Urgency.critical)
-    )
+    result = d.notify(Notification(title="anything", body="anything", urgency=Urgency.critical))
     assert result.dropped
     assert result.reason == "disabled"
 

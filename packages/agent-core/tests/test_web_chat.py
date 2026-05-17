@@ -5,14 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
 from agent_core.openbrain import OpenBrainStore, StubEmbeddingProvider
 from agent_core.secrets import MemorySecretStore
 from agent_core.settings import AgentSettings
-from agent_core.skills import StubLanguageModel
 from agent_core.state import Database
 from agent_core.web import create_app
+from fastapi.testclient import TestClient
 
 TOKEN = "chat-test-token"
 
@@ -65,8 +63,8 @@ def test_chat_page_renders_html(app_factory) -> None:
 def test_chat_page_has_message_input_and_token_field(app_factory) -> None:
     client = app_factory()
     r = client.get("/chat")
-    assert "id=\"message\"" in r.text
-    assert "id=\"token\"" in r.text
+    assert 'id="message"' in r.text
+    assert 'id="token"' in r.text
 
 
 def test_chat_page_no_external_dependencies(app_factory) -> None:
@@ -76,7 +74,7 @@ def test_chat_page_no_external_dependencies(app_factory) -> None:
     text = r.text.lower()
     # Script + style live inline only
     assert "<script src=" not in text
-    assert "<link rel=\"stylesheet\"" not in text
+    assert '<link rel="stylesheet"' not in text
 
 
 # ── /chat/turn — auth ──────────────────────────────────────────────────────
@@ -129,9 +127,7 @@ def test_chat_turn_returns_503_when_llm_misconfigured(app_factory, monkeypatch) 
 def test_chat_turn_continues_conversation(app_factory) -> None:
     """history+session_id round-trip continues a multi-turn conversation."""
     client = app_factory()
-    r1 = client.post(
-        "/chat/turn", json={"message": "first"}, headers=_hdr()
-    )
+    r1 = client.post("/chat/turn", json={"message": "first"}, headers=_hdr())
     assert r1.status_code == 200
     r2 = client.post(
         "/chat/turn",

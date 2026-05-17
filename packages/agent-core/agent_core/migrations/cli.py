@@ -12,8 +12,6 @@ for ``python -m agent_core.migrations.cli``."""
 
 from __future__ import annotations
 
-import json
-import sys
 from pathlib import Path
 
 import click
@@ -22,6 +20,8 @@ from rich.table import Table
 
 from agent_core.migrations.from_esby_install import (
     migrate_esby_install,
+)
+from agent_core.migrations.from_esby_install import (
     to_backup_payload as esby_to_backup_payload,
 )
 from agent_core.migrations.from_loriah_vault import (
@@ -95,10 +95,8 @@ def from_loriah_vault(
             f"[yellow]heads-up:[/yellow] {len(state.skipped_files)} expected file(s) "
             f"not found in vault: {state.skipped_files}"
         )
-        console.print(
-            "  expected paths (relative to vault root):"
-        )
-        for label, rel in DEFAULT_VAULT_PATHS.items():
+        console.print("  expected paths (relative to vault root):")
+        for _label, rel in DEFAULT_VAULT_PATHS.items():
             tag = "✓" if rel not in state.skipped_files else "✗ missing"
             console.print(f"    {tag}  {rel}")
 
@@ -109,12 +107,8 @@ def from_loriah_vault(
     payload = to_backup_payload(state)
     write_backup(payload, output_path)
     size = output_path.stat().st_size
-    console.print(
-        f"[green]wrote backup[/green] {output_path} ({size:,} bytes)"
-    )
-    console.print(
-        "[dim]next:[/dim] dcos restore {p} --skip-schema-check [--yes]".format(p=output_path)
-    )
+    console.print(f"[green]wrote backup[/green] {output_path} ({size:,} bytes)")
+    console.print(f"[dim]next:[/dim] dcos restore {output_path} --skip-schema-check [--yes]")
 
 
 @migrate_group.command(name="from-esby-install")
@@ -180,12 +174,8 @@ def from_esby_install(
     payload = esby_to_backup_payload(state)
     write_backup(payload, output_path)
     size = output_path.stat().st_size
-    console.print(
-        f"[green]wrote backup[/green] {output_path} ({size:,} bytes)"
-    )
-    console.print(
-        "[dim]next:[/dim] ikb restore {p} --skip-schema-check [--yes]".format(p=output_path)
-    )
+    console.print(f"[green]wrote backup[/green] {output_path} ({size:,} bytes)")
+    console.print(f"[dim]next:[/dim] ikb restore {output_path} --skip-schema-check [--yes]")
 
 
 def main() -> None:

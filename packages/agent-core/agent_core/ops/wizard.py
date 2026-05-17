@@ -32,16 +32,17 @@ Implementation notes:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 from agent_core.settings import (
     AgentSettings,
     SettingsManager,
     apply_preset,
 )
-from agent_core.settings.presets import PRESETS, list_presets
+from agent_core.settings.presets import list_presets
 from agent_core.settings.schema import PresetName
 
 logger = logging.getLogger(__name__)
@@ -134,14 +135,14 @@ class WizardResult:
             if dotted.startswith("__"):
                 continue
             mgr.set(dotted, value, save=False)
-        mgr._write_file(_diff_against_defaults(  # type: ignore[attr-defined]
-            self.settings.model_dump(), AgentSettings().model_dump()
-        ))
+        mgr._write_file(
+            _diff_against_defaults(  # type: ignore[attr-defined]
+                self.settings.model_dump(), AgentSettings().model_dump()
+            )
+        )
 
 
-def _diff_against_defaults(
-    current: dict[str, Any], defaults: dict[str, Any]
-) -> dict[str, Any]:
+def _diff_against_defaults(current: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
     """Same as the SettingsManager helper — duplicated to keep wizard
     self-contained (tiny + the import would create a private-API entanglement)."""
     out: dict[str, Any] = {}
@@ -219,9 +220,7 @@ class SetupWizard:
             default="balanced",
         )
         if chosen not in valid:
-            raise WizardValidationError(
-                f"unknown preset {chosen!r}; expected one of {valid}"
-            )
+            raise WizardValidationError(f"unknown preset {chosen!r}; expected one of {valid}")
         preset_name: PresetName = chosen  # type: ignore[assignment]
         settings = apply_preset(settings, preset_name)
         # Preset overrides are recorded as a single virtual key so commit()
@@ -293,15 +292,11 @@ class SetupWizard:
                 )
             if floor != settings.notifications.urgency_floor:
                 overrides["notifications.urgency_floor"] = floor
-            new_notifs = new_notifs.model_copy(
-                update={"ntfy_topic": topic, "urgency_floor": floor}
-            )
+            new_notifs = new_notifs.model_copy(update={"ntfy_topic": topic, "urgency_floor": floor})
         settings = settings.model_copy(update={"notifications": new_notifs})
 
         # Vault
-        vault = self.io.ask(
-            "Vault path (Obsidian-style; leave blank to skip)", default=""
-        ).strip()
+        vault = self.io.ask("Vault path (Obsidian-style; leave blank to skip)", default="").strip()
         if vault:
             overrides["storage.vault_path"] = vault
             settings = settings.model_copy(
@@ -344,9 +339,7 @@ class SetupWizard:
     def _tier_3(
         self, settings: AgentSettings, overrides: dict[str, Any]
     ) -> tuple[AgentSettings, dict[str, Any]]:
-        self.io.say(
-            "Tier 3 — every settings field. Press return to keep the current value."
-        )
+        self.io.say("Tier 3 — every settings field. Press return to keep the current value.")
 
         # Walk the schema's leaves with each field's description as the prompt.
         # We skip fields already touched in tiers 1-2 to avoid double-asking.

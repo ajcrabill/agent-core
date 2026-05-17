@@ -9,10 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 import yaml
-from click.testing import CliRunner
-
 from agent_core.migrations import (
     LoriahVaultMigration,
     migrate_loriah_vault,
@@ -26,8 +23,8 @@ from agent_core.migrations.from_loriah_vault import (
 from agent_core.ops import restore_backup
 from agent_core.state import Database
 from agent_core.state.models import Obligation, Thought, ThoughtSource
+from click.testing import CliRunner
 from sqlmodel import select
-
 
 # ── Vault fixture ──────────────────────────────────────────────────────────
 
@@ -293,9 +290,7 @@ def test_e2e_migrate_then_restore(tmp_path: Path) -> None:
 
 def test_e2e_settings_yaml_writes_when_path_passed(tmp_path: Path) -> None:
     vault = _build_vault(tmp_path)
-    payload = to_backup_payload(
-        migrate_loriah_vault(vault, settings_preset="cautious")
-    )
+    payload = to_backup_payload(migrate_loriah_vault(vault, settings_preset="cautious"))
 
     target_db = Database.sqlite(tmp_path / "target.db")
     target_db.create_all()

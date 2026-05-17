@@ -110,9 +110,7 @@ def doctor_command(config_path: Path | None, db_url: str | None, as_json: bool) 
     default=None,
     help="Path to agent.yml (will be embedded in the backup).",
 )
-@click.option(
-    "--db-url", default=None, help="SQLAlchemy URL for the agent database (required)."
-)
+@click.option("--db-url", default=None, help="SQLAlchemy URL for the agent database (required).")
 @click.option(
     "--include-identity-public-key",
     default=None,
@@ -220,7 +218,9 @@ def restore_command(
         sys.exit(1)
 
     inserted = sum(report.rows_inserted.values())
-    console.print(f"[green]restored[/green] {inserted} rows into {len(report.rows_inserted)} tables")
+    console.print(
+        f"[green]restored[/green] {inserted} rows into {len(report.rows_inserted)} tables"
+    )
     if report.skipped_tables:
         console.print(
             f"[yellow]skipped[/yellow] {len(report.skipped_tables)} tables "
@@ -296,9 +296,7 @@ def setup_command(
     result.commit(target)
     console.print(f"[green]wrote settings to[/green] {target}")
     if result.overrides.get("__display_name"):
-        console.print(
-            f"[dim]display name {result.overrides['__display_name']!r} captured.[/dim]"
-        )
+        console.print(f"[dim]display name {result.overrides['__display_name']!r} captured.[/dim]")
 
     if no_init:
         console.print(
@@ -337,10 +335,7 @@ API_TOKEN_KEY = "web.api_token"
 @click.option(
     "--db-url",
     default=None,
-    help=(
-        "SQLAlchemy URL for the agent database. If omitted, reads from "
-        "settings.storage.url."
-    ),
+    help=("SQLAlchemy URL for the agent database. If omitted, reads from settings.storage.url."),
 )
 @click.option(
     "--rotate-token",
@@ -395,7 +390,6 @@ def init_command(
     import secrets as _secrets
 
     from agent_core.secrets import default_store
-    from agent_core.state.db import Database
 
     try:
         mgr = SettingsManager(path=config_path)
@@ -405,9 +399,7 @@ def init_command(
 
     resolved_url = db_url or mgr.get("storage.url")
     if not resolved_url:
-        console.print(
-            "[red]no db url:[/red] pass --db-url or set storage.url in agent.yml"
-        )
+        console.print("[red]no db url:[/red] pass --db-url or set storage.url in agent.yml")
         sys.exit(1)
 
     # Bootstrap schema via alembic — both creates the schema AND stamps
@@ -430,9 +422,7 @@ def init_command(
         except Exception as e:
             # Non-fatal: settings might be read-only in CI; the schema
             # is already at head, that's the important part.
-            console.print(
-                f"[yellow]could not persist storage.url to settings:[/yellow] {e}"
-            )
+            console.print(f"[yellow]could not persist storage.url to settings:[/yellow] {e}")
 
     # Generate / load API token.
     store = default_store()
@@ -541,9 +531,7 @@ def _configure_llm(
     if api_key:
         try:
             store.set("llm", default_key_name, api_key)
-            console.print(
-                f"[green]LLM configured[/green] provider={provider} model={model}"
-            )
+            console.print(f"[green]LLM configured[/green] provider={provider} model={model}")
         except Exception as e:
             console.print(f"[yellow]LLM key not stored:[/yellow] {e}")
             console.print(

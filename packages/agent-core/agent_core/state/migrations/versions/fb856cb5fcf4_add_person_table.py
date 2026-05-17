@@ -21,7 +21,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 import sqlmodel  # noqa: F401
-
 from alembic import op
 
 # revision identifiers, used by Alembic.

@@ -52,8 +52,8 @@ def calendar_today(config_path):
     from agent_core.secrets import default_store
     from agent_core.settings import SettingsManager
     from agent_core.work.calendar import (
-        CalendarFetchError,
         CalendarFetcher,
+        CalendarFetchError,
         fetch_today,
     )
 
@@ -92,8 +92,8 @@ def calendar_upcoming(hours, config_path):
     from agent_core.secrets import default_store
     from agent_core.settings import SettingsManager
     from agent_core.work.calendar import (
-        CalendarFetchError,
         CalendarFetcher,
+        CalendarFetchError,
         fetch_window,
     )
 

@@ -37,8 +37,7 @@ class SkillRegistry:
             raise ValueError("skill.name must be a non-empty string")
         if skill.name in self._skills:
             raise ValueError(
-                f"skill {skill.name!r} already registered; pick a unique name "
-                f"or unregister first"
+                f"skill {skill.name!r} already registered; pick a unique name or unregister first"
             )
         self._skills[skill.name] = skill
         logger.info("registered skill: %s (%s)", skill.name, ",".join(skill.tags))
@@ -55,9 +54,7 @@ class SkillRegistry:
         skill = self._skills.get(name)
         if skill is None:
             available = sorted(self._skills.keys())
-            raise KeyError(
-                f"skill {name!r} not found; registered: {available}"
-            )
+            raise KeyError(f"skill {name!r} not found; registered: {available}")
         return skill
 
     def list(self) -> list[Skill]:

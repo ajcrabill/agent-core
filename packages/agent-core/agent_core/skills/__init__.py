@@ -29,6 +29,7 @@ Skill design rules:
       caller can show provenance.
 """
 
+# ruff: noqa: I001 — import order is intentional to avoid circular imports
 from agent_core.skills.chat import (
     DEFAULT_SYSTEM_PROMPT,
     ChatMessage,
@@ -37,6 +38,7 @@ from agent_core.skills.chat import (
     run_turn,
 )
 from agent_core.skills.context import SkillContext, SkillResult
+from agent_core.skills.fallback import FallbackLanguageModel
 from agent_core.skills.openai_compat import (
     LanguageModelError,
     OpenAICompatLanguageModel,
@@ -51,7 +53,6 @@ from agent_core.skills.runner import (
     SkillOutputError,
     SkillRunner,
 )
-from agent_core.skills.fallback import FallbackLanguageModel
 from agent_core.skills.stubs import StubLanguageModel
 from agent_core.skills.tools import (
     CompletionResponse,
@@ -65,6 +66,7 @@ from agent_core.skills.tools import (
 
 # Built-in reference skills. Importing these auto-registers them on
 # default_registry. Both dcos-agent and ikb-agent get them out of the box.
+# NOTE: must import after protocol/runner to avoid circular imports.
 from agent_core.skills.document_creator import DocumentCreator
 from agent_core.skills.email_composer import EmailComposer
 from agent_core.skills.email_triage import EmailTriage

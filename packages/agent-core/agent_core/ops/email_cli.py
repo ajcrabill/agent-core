@@ -70,8 +70,8 @@ def email_pull(config_path, db_url, limit):
     from agent_core.settings import SettingsManager
     from agent_core.state.db import Database
     from agent_core.work.email_fetch import (
-        EmailFetchError,
         EmailFetcher,
+        EmailFetchError,
         fetch_and_capture,
     )
 
@@ -83,9 +83,7 @@ def email_pull(config_path, db_url, limit):
 
     resolved_url = db_url or mgr.get("storage.url")
     if not resolved_url:
-        console.print(
-            "[red]no db url:[/red] pass --db-url or set storage.url in agent.yml"
-        )
+        console.print("[red]no db url:[/red] pass --db-url or set storage.url in agent.yml")
         raise click.exceptions.Exit(1)
     db = Database(resolved_url)
 
@@ -95,12 +93,8 @@ def email_pull(config_path, db_url, limit):
         console.print(f"[red]email fetch not configured:[/red] {e}")
         raise click.exceptions.Exit(1) from e
 
-    effective_limit = (
-        limit if limit is not None else mgr.settings.email.imap.fetch_limit
-    )
-    console.print(
-        f"[dim]connecting to {fetcher.host}:{fetcher.port} as {fetcher.username}…[/dim]"
-    )
+    effective_limit = limit if limit is not None else mgr.settings.email.imap.fetch_limit
+    console.print(f"[dim]connecting to {fetcher.host}:{fetcher.port} as {fetcher.username}…[/dim]")
     report = fetch_and_capture(fetcher=fetcher, db=db, limit=effective_limit)
 
     console.print(
@@ -141,6 +135,8 @@ def email_drafts(config_path, db_url, limit):
     on an in-progress, inbound_email obligation. Send one with
     `<product> email send <obligation-id>`.
     """
+    from sqlmodel import select
+
     from agent_core.settings import SettingsManager
     from agent_core.state.db import Database
     from agent_core.state.models import (
@@ -150,7 +146,6 @@ def email_drafts(config_path, db_url, limit):
         ObligationSource,
         ObligationStatus,
     )
-    from sqlmodel import select
 
     try:
         mgr = SettingsManager(path=config_path)
@@ -160,9 +155,7 @@ def email_drafts(config_path, db_url, limit):
 
     resolved_url = db_url or mgr.get("storage.url")
     if not resolved_url:
-        console.print(
-            "[red]no db url:[/red] pass --db-url or set storage.url in agent.yml"
-        )
+        console.print("[red]no db url:[/red] pass --db-url or set storage.url in agent.yml")
         raise click.exceptions.Exit(1)
     db = Database(resolved_url)
 
@@ -241,6 +234,8 @@ def email_drafts(config_path, db_url, limit):
 )
 def email_show(obligation_id, config_path, db_url):
     """Print the latest draft for an obligation (full body)."""
+    from sqlmodel import select
+
     from agent_core.settings import SettingsManager
     from agent_core.state.db import Database
     from agent_core.state.models import (
@@ -248,7 +243,6 @@ def email_show(obligation_id, config_path, db_url):
         ObligationEvent,
         ObligationEventKind,
     )
-    from sqlmodel import select
 
     try:
         mgr = SettingsManager(path=config_path)
@@ -258,20 +252,14 @@ def email_show(obligation_id, config_path, db_url):
 
     resolved_url = db_url or mgr.get("storage.url")
     if not resolved_url:
-        console.print(
-            "[red]no db url:[/red] pass --db-url or set storage.url in agent.yml"
-        )
+        console.print("[red]no db url:[/red] pass --db-url or set storage.url in agent.yml")
         raise click.exceptions.Exit(1)
     db = Database(resolved_url)
 
     with db.session() as s:
         obs = list(s.exec(select(Obligation)).all())
         match = next(
-            (
-                ob
-                for ob in obs
-                if ob.id == obligation_id or ob.id.startswith(obligation_id)
-            ),
+            (ob for ob in obs if ob.id == obligation_id or ob.id.startswith(obligation_id)),
             None,
         )
         if match is None:
@@ -343,9 +331,7 @@ def email_compose(config_path, db_url, limit):
 
     resolved_url = db_url or mgr.get("storage.url")
     if not resolved_url:
-        console.print(
-            "[red]no db url:[/red] pass --db-url or set storage.url in agent.yml"
-        )
+        console.print("[red]no db url:[/red] pass --db-url or set storage.url in agent.yml")
         raise click.exceptions.Exit(1)
     db = Database(resolved_url)
 
@@ -392,6 +378,8 @@ def email_send(obligation_id, config_path, db_url, yes):
     By default shows a preview and asks for confirmation. Pass --yes to
     skip the prompt (e.g., from a script that already verified the draft).
     """
+    from sqlmodel import select
+
     from agent_core.secrets import default_store
     from agent_core.settings import SettingsManager
     from agent_core.state.db import Database
@@ -405,7 +393,6 @@ def email_send(obligation_id, config_path, db_url, yes):
         EmailSendError,
         send_draft,
     )
-    from sqlmodel import select
 
     try:
         mgr = SettingsManager(path=config_path)
@@ -415,9 +402,7 @@ def email_send(obligation_id, config_path, db_url, yes):
 
     resolved_url = db_url or mgr.get("storage.url")
     if not resolved_url:
-        console.print(
-            "[red]no db url:[/red] pass --db-url or set storage.url in agent.yml"
-        )
+        console.print("[red]no db url:[/red] pass --db-url or set storage.url in agent.yml")
         raise click.exceptions.Exit(1)
     db = Database(resolved_url)
 
@@ -425,11 +410,7 @@ def email_send(obligation_id, config_path, db_url, yes):
     with db.session() as s:
         obs = list(s.exec(select(Obligation)).all())
         match = next(
-            (
-                ob
-                for ob in obs
-                if ob.id == obligation_id or ob.id.startswith(obligation_id)
-            ),
+            (ob for ob in obs if ob.id == obligation_id or ob.id.startswith(obligation_id)),
             None,
         )
         if match is None:
@@ -446,13 +427,9 @@ def email_send(obligation_id, config_path, db_url, yes):
                     .order_by(ObligationEvent.occurred_at.desc())
                 ).all()
             )
-            drafts = [
-                e for e in events if (e.payload or {}).get("type") == "draft"
-            ]
+            drafts = [e for e in events if (e.payload or {}).get("type") == "draft"]
             if not drafts:
-                console.print(
-                    f"[yellow]no draft to send for {full_id[:8]}[/yellow]"
-                )
+                console.print(f"[yellow]no draft to send for {full_id[:8]}[/yellow]")
                 raise click.exceptions.Exit(2)
             p = drafts[0].payload
             console.print(f"[bold]to:[/bold] {p.get('to')}")

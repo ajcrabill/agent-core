@@ -35,9 +35,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta, timezone
-from typing import Any, Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -117,16 +117,15 @@ def _list_obligations_handler(args: dict, ctx: ToolContext) -> dict:
     if ctx.db is None:
         return {"error": "no database configured"}
 
-    from agent_core.state.models import Obligation, ObligationStatus
     from sqlmodel import select
+
+    from agent_core.state.models import Obligation, ObligationStatus
 
     status_filter = args.get("status")
     limit = args.get("limit", 20)
 
     with ctx.db.session() as s:
-        stmt = select(Obligation).order_by(
-            Obligation.priority.desc(), Obligation.created_at.desc()
-        )
+        stmt = select(Obligation).order_by(Obligation.priority.desc(), Obligation.created_at.desc())
         if status_filter:
             try:
                 target = ObligationStatus(status_filter)
@@ -171,9 +170,7 @@ def _search_memory_handler(args: dict, ctx: ToolContext) -> dict:
             {
                 "content": (getattr(h.thought, "content", "") or "")[:300],
                 "similarity": round(getattr(h, "similarity", 0), 3),
-                "source_kind": (
-                    h.sources[0].source_kind if getattr(h, "sources", None) else None
-                ),
+                "source_kind": (h.sources[0].source_kind if getattr(h, "sources", None) else None),
             }
             for h in hits
         ],
@@ -377,15 +374,13 @@ def run_tool_loop(
     """
     if not hasattr(language_model, "complete_with_tools"):
         # Fallback: no tool support, do a straight completion
-        return language_model.complete(
-            system=system, user=user_message, max_tokens=max_tokens
-        )
+        return language_model.complete(system=system, user=user_message, max_tokens=max_tokens)
 
     messages: list[dict] = list(history)
     messages.append({"role": "user", "content": user_message})
 
     last_content: str | None = None
-    for iteration in range(max_iterations):
+    for _iteration in range(max_iterations):
         try:
             resp: CompletionResponse = language_model.complete_with_tools(
                 system=system,
@@ -425,10 +420,10 @@ def run_tool_loop(
         )
         for tc in resp.tool_calls:
             if on_tool_call:
-                try:
+                import contextlib
+
+                with contextlib.suppress(Exception):
                     on_tool_call(tc.name, tc.arguments)
-                except Exception:  # pragma: no cover — defensive
-                    pass
             result = execute_tool_call(tc, tools, context)
             messages.append(
                 {

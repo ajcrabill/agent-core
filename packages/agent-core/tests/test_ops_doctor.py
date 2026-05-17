@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agent_core.ops import CheckResult, CheckStatus, Doctor, DoctorReport, HealthCheck
 from agent_core.ops.doctor import (
     DoctorContext,
@@ -18,7 +16,6 @@ from agent_core.ops.doctor import (
 )
 from agent_core.settings import AgentSettings, SettingsManager
 from agent_core.state import Database
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 

@@ -169,9 +169,7 @@ def run_tick(
                     f"{item.obligation.status.value}."
                 )
                 # Severity → urgency mapping
-                urgency = (
-                    Urgency.critical if item.age_hours > 168 else Urgency.warn
-                )
+                urgency = Urgency.critical if item.age_hours > 168 else Urgency.warn
                 result = dispatcher.notify(
                     Notification(
                         title=title,
@@ -201,8 +199,8 @@ def run_tick(
         try:
             from agent_core.secrets import default_store
             from agent_core.work.email_fetch import (
-                EmailFetchError,
                 EmailFetcher,
+                EmailFetchError,
                 fetch_and_capture,
             )
 
@@ -322,12 +320,12 @@ def run_tick(
 #                         needs creating — separate flow once that lands)
 # - task: stays inbox (it IS a task; no auto-transition)
 _TRIAGE_TO_STATUS = {
-    "flag": None,                      # stays inbox
+    "flag": None,  # stays inbox
     "archive": "done",
     "hold": "waiting",
     "draft": "in_progress",
-    "track-relationship": None,        # stays inbox
-    "task": None,                       # stays inbox
+    "track-relationship": None,  # stays inbox
+    "task": None,  # stays inbox
 }
 
 
@@ -432,9 +430,7 @@ def triage_inbox(
             ctx,
         )
         if not outcome.succeeded:
-            report.errors.append(
-                f"triage {ob.id[:8]}: {outcome.error}"
-            )
+            report.errors.append(f"triage {ob.id[:8]}: {outcome.error}")
             continue
 
         result = outcome.result
@@ -559,7 +555,7 @@ def run_loop(
         )
         try:
             on_tick(report)
-        except Exception as e:
+        except Exception:
             logger.exception("on_tick callback failed")
             # Don't crash the loop if the callback throws.
 
@@ -603,21 +599,20 @@ def _default_on_tick(report: TickReport) -> None:
     if report.notifications_dropped:
         summary += f" ({report.notifications_dropped} dropped)"
     if report.email_captured or report.email_skipped_duplicate:
-        summary += (
-            f"; email: {report.email_captured} captured"
-            + (f", {report.email_skipped_duplicate} dup" if report.email_skipped_duplicate else "")
+        summary += f"; email: {report.email_captured} captured" + (
+            f", {report.email_skipped_duplicate} dup" if report.email_skipped_duplicate else ""
         )
     if report.triage and report.triage.triaged:
-        actions = ", ".join(
-            f"{k}={v}" for k, v in sorted(report.triage.by_action.items())
-        )
+        actions = ", ".join(f"{k}={v}" for k, v in sorted(report.triage.by_action.items()))
         summary += f"; triaged {report.triage.triaged} ({actions})"
     if report.drafts_composed:
         summary += f"; drafted {report.drafts_composed}"
     if report.digest_delivery_attempted:
         if report.digest_delivery_sent:
             summary += "; digest sent"
-        elif report.digest_delivery_reason and report.digest_delivery_reason != "skipped_too_recent":
+        elif (
+            report.digest_delivery_reason and report.digest_delivery_reason != "skipped_too_recent"
+        ):
             # Stay quiet on the noisy default ("skipped_too_recent" is the
             # boring case; only surface unusual reasons).
             summary += f"; digest: {report.digest_delivery_reason}"

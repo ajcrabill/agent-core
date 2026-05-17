@@ -96,10 +96,10 @@ class PipelineMonitor:
     def from_settings(
         cls,
         settings: object,
-        db: "Database",
+        db: Database,
         *,
         check_due_dates: bool = True,
-    ) -> "PipelineMonitor":
+    ) -> PipelineMonitor:
         """Build from ``AgentSettings``: reads ``settings.work.pipeline_*``."""
         w = settings.work  # type: ignore[attr-defined]
         return cls(

@@ -5,11 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from click.testing import CliRunner
-
 from agent_core.ops.cli import API_TOKEN_KEY, SECRETS_NAMESPACE, init_command
 from agent_core.secrets import MemorySecretStore
-
+from click.testing import CliRunner
 
 # ── Fixture: monkeypatch the secrets store + a writable settings path ────
 

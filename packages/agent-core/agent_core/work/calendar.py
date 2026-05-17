@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -86,12 +86,11 @@ class CalendarFetcher:
         self.timeout_seconds = timeout_seconds
 
     @classmethod
-    def from_settings(cls, settings: Any, secrets: Any) -> "CalendarFetcher":
+    def from_settings(cls, settings: Any, secrets: Any) -> CalendarFetcher:
         cal = settings.calendar
         if not cal.enabled:
             raise CalendarFetchError(
-                "calendar.enabled is False — set it via "
-                "`dcos settings set calendar.enabled=true`"
+                "calendar.enabled is False — set it via `dcos settings set calendar.enabled=true`"
             )
         url = secrets.get("calendar", cal.ics_url_secret_key)
         if not url:
@@ -127,9 +126,9 @@ class CalendarFetcher:
         Never raises into callers — network/parse failures yield [].
         """
         if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
+            start = start.replace(tzinfo=UTC)
         if end.tzinfo is None:
-            end = end.replace(tzinfo=timezone.utc)
+            end = end.replace(tzinfo=UTC)
 
         raw = self.fetch_raw()
         if raw is None:
@@ -144,9 +143,7 @@ class CalendarFetcher:
 # ── Parser + RRULE expander ────────────────────────────────────────────────
 
 
-def _parse_and_expand(
-    raw: bytes, *, start: datetime, end: datetime
-) -> list[CalendarEvent]:
+def _parse_and_expand(raw: bytes, *, start: datetime, end: datetime) -> list[CalendarEvent]:
     """Turn raw ICS bytes into a list of CalendarEvent instances within
     [start, end). Expands RRULEs."""
     from icalendar import Calendar
@@ -182,11 +179,7 @@ def _expand_event(
     dtend = component.get("DTEND")
 
     base_start = _coerce_dt(dtstart.dt)
-    if dtend is not None:
-        base_end = _coerce_dt(dtend.dt)
-    else:
-        # No DTEND — assume same as DTSTART (zero-length) for sanity
-        base_end = base_start
+    base_end = _coerce_dt(dtend.dt) if dtend is not None else base_start
     duration = base_end - base_start
     all_day = isinstance(dtstart.dt, date) and not isinstance(dtstart.dt, datetime)
 
@@ -276,16 +269,14 @@ def _coerce_dt(value: Any) -> datetime:
     """Ensure we have a tz-aware datetime; promote dates to midnight UTC."""
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
+            return value.replace(tzinfo=UTC)
         return value
     if isinstance(value, date):
-        return datetime.combine(value, time(0, 0), tzinfo=timezone.utc)
+        return datetime.combine(value, time(0, 0), tzinfo=UTC)
     raise TypeError(f"can't coerce {type(value).__name__} to datetime")
 
 
-def _overlaps(
-    a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime
-) -> bool:
+def _overlaps(a_start: datetime, a_end: datetime, b_start: datetime, b_end: datetime) -> bool:
     return a_start < b_end and a_end > b_start
 
 
@@ -298,14 +289,12 @@ def _strip_mailto(value: str) -> str:
 # ── Convenience: today's schedule ──────────────────────────────────────────
 
 
-def fetch_today(
-    fetcher: CalendarFetcher, *, now: datetime | None = None
-) -> list[CalendarEvent]:
+def fetch_today(fetcher: CalendarFetcher, *, now: datetime | None = None) -> list[CalendarEvent]:
     """Return events whose start/end overlaps today (UTC midnight to
     next-midnight)."""
     if now is None:
-        now = datetime.now(timezone.utc)
-    start = datetime.combine(now.date(), time(0, 0), tzinfo=timezone.utc)
+        now = datetime.now(UTC)
+    start = datetime.combine(now.date(), time(0, 0), tzinfo=UTC)
     end = start + timedelta(days=1)
     return fetcher.fetch_events(start=start, end=end)
 
@@ -315,7 +304,7 @@ def fetch_window(
 ) -> list[CalendarEvent]:
     """Return events overlapping ``[now, now + hours)``."""
     if now is None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
     return fetcher.fetch_events(start=now, end=now + timedelta(hours=hours))
 
 

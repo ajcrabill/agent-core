@@ -31,7 +31,6 @@ from pydantic import BaseModel, Field
 
 from agent_core.skills import SeedRule, SkillContext, SkillResult
 
-
 TriageAction = Literal[
     "flag",
     "archive",
@@ -92,7 +91,9 @@ class EmailTriage:
     """Classify inbound email by action."""
 
     name = "email-triage"
-    description = "Classify an inbound email by action (flag/archive/hold/draft/track-relationship/task)."
+    description = (
+        "Classify an inbound email by action (flag/archive/hold/draft/track-relationship/task)."
+    )
     tags: list[str] = ["email", "classify", "triage"]
     input_schema = EmailTriageInput
     output_schema = EmailTriageOutput
@@ -122,16 +123,9 @@ class EmailTriage:
 
     def execute(self, input: EmailTriageInput, context: SkillContext) -> SkillResult:
         if context.language_model is None:
-            raise RuntimeError(
-                "email-triage requires a LanguageModel in the SkillContext"
-            )
+            raise RuntimeError("email-triage requires a LanguageModel in the SkillContext")
 
-        user_prompt = (
-            f"From: {input.sender}\n"
-            f"Subject: {input.subject}\n"
-            f"\n"
-            f"{input.body}"
-        )
+        user_prompt = f"From: {input.sender}\nSubject: {input.subject}\n\n{input.body}"
         # Triage decisions are tiny (~30 tokens of JSON) but modern
         # reasoning models (gemma3/4, qwen3, deepseek-r1, o-series) need
         # significant budget to "think" before they answer. 800 tokens
@@ -159,9 +153,7 @@ class EmailTriage:
             "track-relationship",
             "task",
         ):
-            raise ValueError(
-                f"email-triage: model returned unknown action {action!r}"
-            )
+            raise ValueError(f"email-triage: model returned unknown action {action!r}")
 
         # Map score → bucket per vault confidence-bucket conventions.
         if confidence >= 0.80:
@@ -196,11 +188,11 @@ _JSON_OBJECT = re.compile(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", re.DOTALL)
 def _parse_response(raw: str) -> dict:
     """Parse the LLM's JSON response. Handles:
 
-      - Bare JSON (the common, fast path)
-      - Fenced JSON (```json``` blocks)
-      - JSON embedded in a longer reasoning trace (last balanced {...})
-        — surfaced when the LM wrapper's fallback returns a reasoning
-        field instead of empty content.
+    - Bare JSON (the common, fast path)
+    - Fenced JSON (```json``` blocks)
+    - JSON embedded in a longer reasoning trace (last balanced {...})
+      — surfaced when the LM wrapper's fallback returns a reasoning
+      field instead of empty content.
     """
     raw = raw.strip()
     if not raw:

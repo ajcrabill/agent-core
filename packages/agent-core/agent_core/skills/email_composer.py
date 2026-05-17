@@ -22,7 +22,6 @@ from pydantic import BaseModel, Field
 
 from agent_core.skills import SeedRule, SkillContext, SkillResult
 
-
 # ── Schemas ────────────────────────────────────────────────────────────────
 
 
@@ -90,7 +89,9 @@ class EmailComposer:
     """Draft an email response."""
 
     name = "email-composer"
-    description = "Draft an email reply matched to recipient formality + ending with a clear next step."
+    description = (
+        "Draft an email reply matched to recipient formality + ending with a clear next step."
+    )
     tags: list[str] = ["email", "draft", "writing"]
     input_schema = EmailComposerInput
     output_schema = EmailComposerOutput
@@ -111,24 +112,19 @@ class EmailComposer:
         ),
         SeedRule(
             correction=(
-                "Use Oxford commas. Use em-dashes for asides — like this — "
-                "not parentheses."
+                "Use Oxford commas. Use em-dashes for asides — like this — not parentheses."
             ),
             skill_tags=["email-composer", "general"],
         ),
         SeedRule(
-            correction=(
-                "Lead with what the reader needs to know. Background later."
-            ),
+            correction=("Lead with what the reader needs to know. Background later."),
             skill_tags=["email-composer", "document-creator", "general"],
         ),
     ]
 
     def execute(self, input: EmailComposerInput, context: SkillContext) -> SkillResult:
         if context.language_model is None:
-            raise RuntimeError(
-                "email-composer requires a LanguageModel in the SkillContext"
-            )
+            raise RuntimeError("email-composer requires a LanguageModel in the SkillContext")
 
         # Optional grounding (off by default — emails are usually self-contained)
         references: list[dict[str, Any]] = []
@@ -154,18 +150,12 @@ class EmailComposer:
                 )
 
         thread_block = (
-            f"\nThread history:\n{input.thread_history}\n"
-            if input.thread_history
-            else ""
+            f"\nThread history:\n{input.thread_history}\n" if input.thread_history else ""
         )
         formality_block = (
-            f"\nFormality: {input.formality_hint}"
-            if input.formality_hint != "auto"
-            else ""
+            f"\nFormality: {input.formality_hint}" if input.formality_hint != "auto" else ""
         )
-        subject_block = (
-            f"Subject hint: {input.subject_hint}\n" if input.subject_hint else ""
-        )
+        subject_block = f"Subject hint: {input.subject_hint}\n" if input.subject_hint else ""
 
         user_prompt = (
             f"To: {input.to}\n"
@@ -198,9 +188,7 @@ class EmailComposer:
         )
         confidence = 0.55 + 0.1 * signals  # 0.55 → 0.85 across 0-3 signals
 
-        output = EmailComposerOutput(
-            subject=subject, body=body, word_count=word_count
-        )
+        output = EmailComposerOutput(subject=subject, body=body, word_count=word_count)
         return SkillResult(
             output=output,
             confidence=confidence,
@@ -227,9 +215,7 @@ def _parse_response(raw: str, *, fallback_subject: str) -> tuple[str, str]:
 
     subject_match = _SUBJECT_LINE.search(raw)
     subject = (
-        subject_match.group(1).strip()
-        if subject_match
-        else (fallback_subject or "(no subject)")
+        subject_match.group(1).strip() if subject_match else (fallback_subject or "(no subject)")
     )
 
     # Body = everything after the divider OR after the SUBJECT line.

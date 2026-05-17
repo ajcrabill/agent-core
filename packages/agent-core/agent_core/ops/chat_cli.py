@@ -81,15 +81,10 @@ def remember_command(
     from agent_core.settings import SettingsManager
     from agent_core.state.db import Database
 
-    if from_stdin:
-        text = _sys.stdin.read().strip()
-    else:
-        text = " ".join(content).strip()
+    text = _sys.stdin.read().strip() if from_stdin else " ".join(content).strip()
 
     if not text:
-        console.print(
-            "[red]nothing to remember:[/red] pass content as args or --from-stdin"
-        )
+        console.print("[red]nothing to remember:[/red] pass content as args or --from-stdin")
         raise click.exceptions.Exit(2)
 
     try:
@@ -113,7 +108,7 @@ def remember_command(
     )
     console.print(f"[green]captured[/green] id={thought.id[:8]}…")
     console.print(
-        f"[dim]source_kind={source_kind}{' uri='+source_uri if source_uri else ''}[/dim]"
+        f"[dim]source_kind={source_kind}{' uri=' + source_uri if source_uri else ''}[/dim]"
     )
     if len(text) > 100:
         console.print(f"[dim]content: {text[:100]}…[/dim]")
@@ -179,9 +174,7 @@ def recall_command(query, limit, config_path, db_url):
         sim = round(h.similarity, 3)
         src = h.sources[0] if h.sources else None
         src_str = f" ({src.source_kind})" if src else ""
-        console.print(
-            f"[bold cyan]{i}.[/bold cyan] [dim]similarity={sim}{src_str}[/dim]"
-        )
+        console.print(f"[bold cyan]{i}.[/bold cyan] [dim]similarity={sim}{src_str}[/dim]")
         snippet = h.thought.content[:300].replace("\n", " ")
         console.print(f"   {snippet}")
         console.print()
@@ -268,11 +261,7 @@ def chat_command(config_path, db_url, no_context, system_prompt, max_tokens, stu
 
     # Calendar: optional, opt-in via settings. Built once per session.
     calendar = None
-    if (
-        not no_context
-        and mgr.settings.calendar.enabled
-        and mgr.settings.calendar.inject_into_chat
-    ):
+    if not no_context and mgr.settings.calendar.enabled and mgr.settings.calendar.inject_into_chat:
         from agent_core.work.calendar import CalendarFetcher, CalendarFetchError
 
         try:
@@ -286,9 +275,7 @@ def chat_command(config_path, db_url, no_context, system_prompt, max_tokens, stu
     else:
         try:
             lm = language_model_from_settings(mgr.settings, default_store())
-            provider_label = (
-                f"{mgr.settings.llm.provider} / {mgr.settings.llm.model}"
-            )
+            provider_label = f"{mgr.settings.llm.provider} / {mgr.settings.llm.model}"
         except LanguageModelError as e:
             console.print(f"[red]LLM not configured:[/red] {e}")
             console.print(
@@ -305,9 +292,7 @@ def chat_command(config_path, db_url, no_context, system_prompt, max_tokens, stu
         session_id=f"cli-{_uuid.uuid4()}",
     )
 
-    console.print(
-        f"[dim]chatting with {provider_label}. Ctrl-D or /exit to quit.[/dim]"
-    )
+    console.print(f"[dim]chatting with {provider_label}. Ctrl-D or /exit to quit.[/dim]")
     console.print(
         "[dim]Slash commands: /help, /reset, /context, /triage, /run, /digest, "
         "/capture, /drafts, /send, /today, /exit.[/dim]"
@@ -371,16 +356,14 @@ def chat_command(config_path, db_url, no_context, system_prompt, max_tokens, stu
             _show_digest_inline(db=db, hours=hours)
             continue
         if text.startswith("/capture"):
-            payload = text[len("/capture"):].strip()
+            payload = text[len("/capture") :].strip()
             if not payload:
                 console.print(
                     "[yellow]usage: /capture Email from x@y.com: subject\\nbody…[/yellow]"
                 )
                 continue
             ob_id = _capture_inline(db=db, raw=payload)
-            console.print(
-                f"[dim]captured obligation {ob_id[:8]} — try /triage to classify[/dim]"
-            )
+            console.print(f"[dim]captured obligation {ob_id[:8]} — try /triage to classify[/dim]")
             continue
         if text == "/drafts":
             _list_drafts_inline(db=db)
@@ -399,7 +382,7 @@ def chat_command(config_path, db_url, no_context, system_prompt, max_tokens, stu
                 _print_calendar_events(events)
             continue
         if text.startswith("/send"):
-            target = text[len("/send"):].strip()
+            target = text[len("/send") :].strip()
             if not target:
                 console.print("[yellow]usage: /send <obligation-id-prefix>[/yellow]")
                 continue
@@ -450,10 +433,7 @@ def _run_triage_inline(*, db, settings, language_model) -> None:
     if report.errors:
         for err in report.errors:
             console.print(f"[red]triage error:[/red] {err}")
-    by_action = (
-        ", ".join(f"{n} {a}" for a, n in sorted(report.by_action.items()))
-        or "none"
-    )
+    by_action = ", ".join(f"{n} {a}" for a, n in sorted(report.by_action.items())) or "none"
     console.print(
         f"[dim]triage: {report.candidates} candidates, {report.triaged} classified "
         f"({by_action}), {report.skipped_already_triaged} already triaged.[/dim]"
@@ -507,6 +487,8 @@ def _show_digest_inline(*, db, hours: float) -> None:
 
 def _list_drafts_inline(*, db) -> None:
     """List pending email drafts to the chat console."""
+    from sqlmodel import select
+
     from agent_core.state.models import (
         Obligation,
         ObligationEvent,
@@ -514,7 +496,6 @@ def _list_drafts_inline(*, db) -> None:
         ObligationSource,
         ObligationStatus,
     )
-    from sqlmodel import select
 
     if db is None:
         console.print("[yellow]/drafts requires a database; aborting.[/yellow]")
@@ -570,6 +551,8 @@ def _list_drafts_inline(*, db) -> None:
 
 def _send_draft_inline(*, db, settings, target: str) -> None:
     """Send a drafted reply via SMTP from inside chat."""
+    from sqlmodel import select
+
     from agent_core.secrets import default_store
     from agent_core.state.models import Obligation
     from agent_core.work.email_send import (
@@ -577,7 +560,6 @@ def _send_draft_inline(*, db, settings, target: str) -> None:
         EmailSendError,
         send_draft,
     )
-    from sqlmodel import select
 
     if db is None:
         console.print("[yellow]/send requires a database; aborting.[/yellow]")
@@ -663,8 +645,7 @@ def _smart_stub_lm():
             ),
             (
                 r"email drafter",
-                "SUBJECT: (stub draft subject)\n---\n"
-                "This is a stub draft body.\nBest,\nStub",
+                "SUBJECT: (stub draft subject)\n---\nThis is a stub draft body.\nBest,\nStub",
             ),
             (
                 r"document writer",

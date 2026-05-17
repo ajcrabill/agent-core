@@ -11,12 +11,8 @@ Two layers:
 
 from __future__ import annotations
 
-import json
-
-import pytest
-from sqlmodel import select
-
 import dcos_agent.skills  # noqa: F401  registers email-triage + email-composer
+import pytest
 from agent_core.settings import AgentSettings
 from agent_core.skills import StubLanguageModel
 from agent_core.state.db import Database
@@ -28,15 +24,13 @@ from agent_core.state.models import (
     ObligationStatus,
 )
 from agent_core.work.email_send import (
-    ComposeReport,
     EmailSender,
     EmailSendError,
-    SendReport,
     _split_email_title,
     compose_drafts,
     send_draft,
 )
-
+from sqlmodel import select
 
 # ── Fixtures / helpers ─────────────────────────────────────────────────────
 
@@ -172,9 +166,7 @@ def test_from_settings_builds_when_complete():
     s.email.smtp.username = "u@x.com"
     s.email.smtp.from_address = "u@x.com"
     s.email.smtp.from_name = "User Display"
-    sender = EmailSender.from_settings(
-        s, _FakeSecrets({"email": {"smtp_password": "secret"}})
-    )
+    sender = EmailSender.from_settings(s, _FakeSecrets({"email": {"smtp_password": "secret"}}))
     assert sender.host == "smtp.example.com"
     assert sender.from_name == "User Display"
     assert sender.password == "secret"
@@ -357,7 +349,7 @@ def test_compose_drafts_creates_draft_event_for_triaged_email():
 
 def test_compose_drafts_idempotent_skips_already_drafted():
     db = _db()
-    ob_id = _seed_triaged_email(db)
+    _seed_triaged_email(db)
     settings = AgentSettings()
 
     r1 = compose_drafts(db=db, settings=settings, language_model=_composer_lm())
@@ -380,9 +372,7 @@ def test_compose_drafts_skips_non_email_obligations():
         s.add(ob)
         s.commit()
     settings = AgentSettings()
-    report = compose_drafts(
-        db=db, settings=settings, language_model=_composer_lm()
-    )
+    report = compose_drafts(db=db, settings=settings, language_model=_composer_lm())
     assert report.drafted == 0
 
 
@@ -400,9 +390,7 @@ def test_compose_drafts_skips_when_no_triage_draft_action():
         s.add(ob)
         s.commit()
     settings = AgentSettings()
-    report = compose_drafts(
-        db=db, settings=settings, language_model=_composer_lm()
-    )
+    report = compose_drafts(db=db, settings=settings, language_model=_composer_lm())
     assert report.drafted == 0
 
 
@@ -417,11 +405,7 @@ def test_compose_drafts_records_in_reply_to_when_message_id_present():
     # Just test that the prior seed created the event correctly:
     with db.session() as s:
         events = list(
-            s.exec(
-                select(ObligationEvent).where(
-                    ObligationEvent.obligation_id == ob_id
-                )
-            ).all()
+            s.exec(select(ObligationEvent).where(ObligationEvent.obligation_id == ob_id)).all()
         )
     creates = [e for e in events if e.kind == ObligationEventKind.created]
     assert creates and creates[0].payload["message_id"] == "<orig-123@example.com>"
@@ -435,9 +419,7 @@ def test_compose_drafts_handles_missing_message_id_gracefully():
     """Email without a Message-ID header still gets drafted; in_reply_to=None."""
     db = _db()
     _seed_triaged_email(db, with_message_id=False)
-    report = compose_drafts(
-        db=db, settings=AgentSettings(), language_model=_composer_lm()
-    )
+    report = compose_drafts(db=db, settings=AgentSettings(), language_model=_composer_lm())
     assert report.drafted == 1
 
 
@@ -516,16 +498,12 @@ def test_send_draft_records_sent_event_with_smtp_message_id():
 
     with db.session() as s:
         events = list(
-            s.exec(
-                select(ObligationEvent).where(
-                    ObligationEvent.obligation_id == ob_id
-                )
-            ).all()
+            s.exec(select(ObligationEvent).where(ObligationEvent.obligation_id == ob_id)).all()
         )
     sent_events = [
-        e for e in events
-        if e.kind == ObligationEventKind.comment
-        and (e.payload or {}).get("type") == "sent"
+        e
+        for e in events
+        if e.kind == ObligationEventKind.comment and (e.payload or {}).get("type") == "sent"
     ]
     assert len(sent_events) == 1
     assert sent_events[0].payload["smtp_message_id"] == "<sent-msg-id@local>"
@@ -557,9 +535,7 @@ def test_send_draft_no_draft_returns_no_draft():
 def test_send_draft_obligation_missing():
     db = _db()
     sender = _FakeSender()
-    report = send_draft(
-        db=db, sender=sender, obligation_id="nonexistent-id"
-    )
+    report = send_draft(db=db, sender=sender, obligation_id="nonexistent-id")
     assert not report.sent
     assert report.reason == "obligation_missing"
 

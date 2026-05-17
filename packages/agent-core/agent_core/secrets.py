@@ -297,14 +297,13 @@ def _keyring_is_writable() -> bool:
             _PROBE_KEY,
             "1",
         )
-        # Best-effort cleanup — failures here are tolerable.
-        try:
+        import contextlib
+
+        with contextlib.suppress(Exception):
             keyring.delete_password(
                 f"{KeyringSecretStore.SERVICE_PREFIX}{_PROBE_NS}",
                 _PROBE_KEY,
             )
-        except Exception:
-            pass
         return True
     except Exception as e:
         logger.info("keychain not writable in this session: %s", e)
@@ -348,8 +347,7 @@ def default_store() -> SecretStore:
             return FileSecretStore()
         if not _keyring_is_writable():
             logger.info(
-                "keychain not writable (likely macOS over SSH); "
-                "using FileSecretStore at %s",
+                "keychain not writable (likely macOS over SSH); using FileSecretStore at %s",
                 FileSecretStore.DEFAULT_PATH,
             )
             return FileSecretStore()

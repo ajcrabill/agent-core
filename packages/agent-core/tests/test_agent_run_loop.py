@@ -6,18 +6,16 @@ exercised with ``once=True`` to avoid actually sleeping in tests.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 import pytest
-
 from agent_core.agent.run_loop import TickReport, run_loop, run_tick
 from agent_core.notifications import NotificationDispatcher, Urgency
 from agent_core.notifications.transports import NoopTransport
 from agent_core.settings import AgentSettings
 from agent_core.state import Database, Obligation, ObligationSource, ObligationStatus
-from agent_core.state.models import Incident, IncidentStatus, utcnow
+from agent_core.state.models import utcnow
 from sqlmodel import select
-
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -144,9 +142,7 @@ def test_run_tick_sends_notification_for_newly_stalled() -> None:
         s.commit()
 
     transport = _RecordingTransport()
-    dispatcher = NotificationDispatcher(
-        transport, enabled=True, urgency_floor=Urgency.info
-    )
+    dispatcher = NotificationDispatcher(transport, enabled=True, urgency_floor=Urgency.info)
     report = run_tick(
         db=db,
         settings=AgentSettings(),
@@ -177,22 +173,16 @@ def test_run_tick_skips_notification_for_already_open_incident() -> None:
         s.commit()
 
     transport = _RecordingTransport()
-    dispatcher = NotificationDispatcher(
-        transport, enabled=True, urgency_floor=Urgency.info
-    )
+    dispatcher = NotificationDispatcher(transport, enabled=True, urgency_floor=Urgency.info)
     settings = AgentSettings()
 
     # First tick: notify (digest delivery disabled to keep this test focused
     # on the stalled-notification path)
-    r1 = run_tick(
-        db=db, settings=settings, dispatcher=dispatcher, digest_delivery_enabled=False
-    )
+    r1 = run_tick(db=db, settings=settings, dispatcher=dispatcher, digest_delivery_enabled=False)
     assert r1.notifications_sent == 1
 
     # Second tick: same obligation still stalled, but no new incident → no notify
-    r2 = run_tick(
-        db=db, settings=settings, dispatcher=dispatcher, digest_delivery_enabled=False
-    )
+    r2 = run_tick(db=db, settings=settings, dispatcher=dispatcher, digest_delivery_enabled=False)
     assert r2.notifications_sent == 0
     assert len(transport.calls) == 1  # still just the first
 
@@ -205,9 +195,7 @@ def test_run_tick_severity_critical_for_very_old_stalled() -> None:
         s.commit()
 
     transport = _RecordingTransport()
-    dispatcher = NotificationDispatcher(
-        transport, enabled=True, urgency_floor=Urgency.info
-    )
+    dispatcher = NotificationDispatcher(transport, enabled=True, urgency_floor=Urgency.info)
     run_tick(
         db=db,
         settings=AgentSettings(),
@@ -289,13 +277,12 @@ def test_run_loop_with_empty_db_idle_tick() -> None:
 # ── triage_inbox: auto-classify inbox emails ──────────────────────────────
 
 
-import json as _json
+import json as _json  # noqa: E402 — needs to happen after dcos_agent.skills registers
 
-import dcos_agent.skills  # noqa: F401  — registers email-triage in default_registry
-
-from agent_core.agent.run_loop import TriageReport, triage_inbox
-from agent_core.skills import StubLanguageModel
-from agent_core.state.models import ObligationEvent
+import dcos_agent.skills  # noqa: F401, E402 — registers email-triage in default_registry
+from agent_core.agent.run_loop import triage_inbox  # noqa: E402 — depends on registration
+from agent_core.skills import StubLanguageModel  # noqa: E402 — depends on registration
+from agent_core.state.models import ObligationEvent  # noqa: E402 — depends on registration
 
 
 def _email_obligation(*, sender="news@example.com", subject="hello", body="x") -> Obligation:
@@ -310,9 +297,7 @@ def _email_obligation(*, sender="news@example.com", subject="hello", body="x") -
 def _triage_lm(action: str, score: float = 0.95, reasoning: str = "stub") -> StubLanguageModel:
     """Build a StubLanguageModel that returns valid email-triage JSON."""
     return StubLanguageModel(
-        default=_json.dumps(
-            {"action": action, "score": score, "reasoning": reasoning}
-        )
+        default=_json.dumps({"action": action, "score": score, "reasoning": reasoning})
     )
 
 
@@ -347,9 +332,7 @@ def test_triage_archive_high_confidence_moves_to_done() -> None:
         s.refresh(ob)
         ob_id = ob.id
 
-    triage_inbox(
-        db=db, settings=AgentSettings(), language_model=_triage_lm("archive", score=0.95)
-    )
+    triage_inbox(db=db, settings=AgentSettings(), language_model=_triage_lm("archive", score=0.95))
 
     with db.session() as s:
         row = s.get(Obligation, ob_id)
@@ -368,9 +351,7 @@ def test_triage_low_confidence_keeps_in_inbox() -> None:
         s.refresh(ob)
         ob_id = ob.id
 
-    triage_inbox(
-        db=db, settings=AgentSettings(), language_model=_triage_lm("archive", score=0.3)
-    )
+    triage_inbox(db=db, settings=AgentSettings(), language_model=_triage_lm("archive", score=0.3))
 
     with db.session() as s:
         row = s.get(Obligation, ob_id)
@@ -465,9 +446,7 @@ def test_triage_skill_failure_surfaces_in_errors() -> None:
             _json.dumps({"action": "flag", "score": 0.9, "reasoning": "ok"}),
         ]
     )
-    report = triage_inbox(
-        db=db, settings=AgentSettings(), language_model=bad_lm
-    )
+    report = triage_inbox(db=db, settings=AgentSettings(), language_model=bad_lm)
 
     assert report.triaged == 1  # only one succeeded
     assert len(report.errors) == 1
@@ -533,9 +512,7 @@ def test_run_tick_attempts_digest_delivery_when_dispatcher_present():
         s.commit()
 
     transport = _RecordingTransport()
-    dispatcher = NotificationDispatcher(
-        transport, enabled=True, urgency_floor=Urgency.info
-    )
+    dispatcher = NotificationDispatcher(transport, enabled=True, urgency_floor=Urgency.info)
     report = run_tick(db=db, settings=AgentSettings(), dispatcher=dispatcher)
 
     assert report.digest_delivery_attempted
@@ -553,9 +530,7 @@ def test_run_tick_digest_delivery_disabled_skips_path():
         s.add(_stalled_obligation(hours_old=30))
         s.commit()
     transport = _RecordingTransport()
-    dispatcher = NotificationDispatcher(
-        transport, enabled=True, urgency_floor=Urgency.info
-    )
+    dispatcher = NotificationDispatcher(transport, enabled=True, urgency_floor=Urgency.info)
     report = run_tick(
         db=db,
         settings=AgentSettings(),
@@ -583,9 +558,7 @@ def test_run_tick_second_tick_cadence_gates_digest():
         s.commit()
 
     transport = _RecordingTransport()
-    dispatcher = NotificationDispatcher(
-        transport, enabled=True, urgency_floor=Urgency.info
-    )
+    dispatcher = NotificationDispatcher(transport, enabled=True, urgency_floor=Urgency.info)
     settings = AgentSettings()
 
     r1 = run_tick(db=db, settings=settings, dispatcher=dispatcher)
@@ -604,9 +577,7 @@ def test_run_tick_digest_skipped_empty_when_no_activity():
     """Empty db → digest delivery returns skipped_empty."""
     db = _db()
     transport = _RecordingTransport()
-    dispatcher = NotificationDispatcher(
-        transport, enabled=True, urgency_floor=Urgency.info
-    )
+    dispatcher = NotificationDispatcher(transport, enabled=True, urgency_floor=Urgency.info)
     report = run_tick(db=db, settings=AgentSettings(), dispatcher=dispatcher)
     assert report.digest_delivery_attempted
     assert not report.digest_delivery_sent
@@ -658,9 +629,7 @@ def test_run_tick_calls_fetch_and_capture_when_enabled(monkeypatch):
         def get(self, ns, key):
             return "secret-pw" if (ns, key) == ("email", "imap_password") else None
 
-    monkeypatch.setattr(
-        "agent_core.secrets.default_store", lambda: _Secrets()
-    )
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: _Secrets())
 
     # Stub fetch_and_capture so we don't actually network
     captured_args = {}
@@ -672,9 +641,7 @@ def test_run_tick_calls_fetch_and_capture_when_enabled(monkeypatch):
 
         return FetchReport(fetched=3, captured=2, skipped_duplicate=1, errors=[])
 
-    monkeypatch.setattr(
-        "agent_core.work.email_fetch.fetch_and_capture", _fake_fetch_and_capture
-    )
+    monkeypatch.setattr("agent_core.work.email_fetch.fetch_and_capture", _fake_fetch_and_capture)
 
     report = run_tick(
         db=db,
@@ -700,9 +667,7 @@ def test_run_tick_email_fetch_disabled_via_kwarg(monkeypatch):
         def get(self, ns, key):
             return "secret-pw"
 
-    monkeypatch.setattr(
-        "agent_core.secrets.default_store", lambda: _Secrets()
-    )
+    monkeypatch.setattr("agent_core.secrets.default_store", lambda: _Secrets())
     # If our shim were called, it'd succeed — so we can verify it WASN'T
     # called by counting.
     call_count = {"n": 0}
@@ -713,9 +678,7 @@ def test_run_tick_email_fetch_disabled_via_kwarg(monkeypatch):
 
         return FetchReport()
 
-    monkeypatch.setattr(
-        "agent_core.work.email_fetch.fetch_and_capture", _fake_fetch_and_capture
-    )
+    monkeypatch.setattr("agent_core.work.email_fetch.fetch_and_capture", _fake_fetch_and_capture)
     run_tick(
         db=db,
         settings=settings,

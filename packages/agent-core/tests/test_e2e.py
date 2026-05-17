@@ -13,7 +13,6 @@ agent with one line so tests focus on behavior, not setup."""
 from __future__ import annotations
 
 import pytest
-
 from agent_core.notifications import Notification, Urgency
 from agent_core.state.models import (
     CorrectionCandidateStatus,
@@ -26,7 +25,6 @@ from agent_core.testing import (
     StubAuditorModel,
     scenarios,
 )
-
 
 # ── Inbound → Obligation ───────────────────────────────────────────────────
 
@@ -148,12 +146,8 @@ def test_e2e_detector_strictness_setting_changes_recall() -> None:
     out under strict (which raises the confidence floor)."""
     # Loose strictness drops confidence floor; strict raises it. We use a
     # marginal phrase whose pattern confidence sits between the two thresholds.
-    bed_loose = AgentTestBed.create(
-        settings={"learning": {"detector_min_confidence": 0.5}}
-    )
-    bed_strict = AgentTestBed.create(
-        settings={"learning": {"detector_min_confidence": 0.7}}
-    )
+    bed_loose = AgentTestBed.create(settings={"learning": {"detector_min_confidence": 0.5}})
+    bed_strict = AgentTestBed.create(settings={"learning": {"detector_min_confidence": 0.7}})
 
     marginal = "Actually, please send via email."
     loose_cand = scenarios.capture_correction(bed_loose, text=marginal)
@@ -228,9 +222,7 @@ def test_e2e_with_setting_rebuilds_dispatcher() -> None:
 
 def test_e2e_openbrain_search_default_limit_honored() -> None:
     """search() with no limit= uses settings.openbrain.search_default_limit."""
-    bed = AgentTestBed.create(
-        settings={"openbrain": {"search_default_limit": 2}}
-    )
+    bed = AgentTestBed.create(settings={"openbrain": {"search_default_limit": 2}})
     for i in range(10):
         bed.openbrain.capture(f"thought number {i}")
     hits = bed.openbrain.search("query")
@@ -239,9 +231,7 @@ def test_e2e_openbrain_search_default_limit_honored() -> None:
 
 def test_e2e_pipeline_thresholds_from_settings() -> None:
     """PipelineMonitor picks up custom thresholds from settings."""
-    bed = AgentTestBed.create(
-        settings={"work": {"pipeline_in_progress_threshold_hours": 4}}
-    )
+    bed = AgentTestBed.create(settings={"work": {"pipeline_in_progress_threshold_hours": 4}})
     assert bed.pipeline_monitor.in_progress_threshold_hours == 4
 
 
@@ -269,9 +259,8 @@ def test_e2e_backup_then_restore_into_fresh_bed(tmp_path) -> None:
 
     target = AgentTestBed(src.settings, target_db)
     # Obligation survived
-    from sqlmodel import select
-
     from agent_core.state.models import Obligation, Thought
+    from sqlmodel import select
 
     with target.db.session() as s:
         obs = list(s.exec(select(Obligation)).all())
